@@ -4,23 +4,18 @@ import json
 import re
 import os
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
-from urllib.parse import urlparse
-import asyncio
-import aiohttp
+from typing import Dict, List, Optional
 from dataclasses import dataclass
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
-from flask import Flask, request
 
 # ספריות חיצוניות נדרשות
 try:
     from newspaper import Article
     import openai
-    from transformers import pipeline
 except ImportError:
-    print("נדרשות ספריות נוספות: pip install newspaper3k openai transformers torch")
+    print("נדרשות ספריות נוספות: pip install newspaper3k openai")
 
 # הגדרות
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -544,16 +539,21 @@ async def tag_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ שגיאה: {str(e)}")
 
 # הגדרת Flask
+from flask import Flask, request
 app = Flask(__name__)
+
+# משתנה גלובלי לapplication
+application = None
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """קבלת עדכונים מטלגרם"""
     try:
         update_data = request.get_json()
-        if update_data:
+        if update_data and application:
             update = Update.de_json(update_data, application.bot)
-            application.update_queue.put_nowait(update)
+            import asyncio
+            asyncio.create_task(application.process_update(update))
         return 'OK'
     except Exception as e:
         logger.error(f"Webhook error: {e}")
@@ -569,7 +569,7 @@ def health():
     """בדיקת תקינות"""
     return {"status": "healthy", "bot": "running"}
 
-def main():
+async def main():
     """הפעלת הבוט"""
     global application
     
@@ -587,19 +587,17 @@ def main():
     # טיפול בכפתורים
     application.add_handler(CallbackQueryHandler(button_callback))
     
-    # הגדרת Webhook אוטומטי
-    PORT = int(os.environ.get('PORT', 8080))
+    # אתחול הבוט
+    await application.initialize()
+    await application.start()
     
     print("🤖 הבוט מופעל...")
+    print("ℹ️  הגדר Webhook ידנית דרך BotFather API")
     
-    # הפעלת הבוט עם Webhook
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path="/webhook",
-        webhook_url=None,  # יוגדר אוטומטית
-        drop_pending_updates=True
-    )
+    # הגדרת flask
+    PORT = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=PORT)
 
 if __name__ == '__main__':
-    main()
+    import asyncio
+    asyncio.run(main())
