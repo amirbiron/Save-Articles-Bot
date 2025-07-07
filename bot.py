@@ -25,7 +25,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # הגדרות קבועות
-TELEGRAM_TOKEN = "7560439844:AAEEVJwLFO44j7QoxZNULRlYlZMKeRK3yP0"
+TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
 OPENAI_API_KEY = "YOUR_OPENAI_API_KEY"  # אופציונלי
 DB_PATH = "read_later.db"
 
@@ -75,17 +75,23 @@ class ReadLaterBot:
     def extract_article_content(self, url: str) -> Optional[Dict]:
         """הוצאת תוכן מכתבה באמצעות Newspaper3k"""
         try:
+            # נסה עם User-Agent כדי לא להיחסם
             article = Article(url, language='he')
+            article.config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            article.config.request_timeout = 10
+            
             article.download()
             article.parse()
             
             # אם לא מצאנו תוכן בעברית, ננסה באנגלית
             if not article.text.strip():
                 article = Article(url, language='en')
+                article.config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 article.download()
                 article.parse()
             
             if not article.text.strip():
+                logger.error(f"No content found for URL: {url}")
                 return None
                 
             return {
@@ -96,7 +102,58 @@ class ReadLaterBot:
             }
             
         except Exception as e:
-            logger.error(f"שגיאה בהוצאת תוכן: {e}")
+            logger.error(f"Error extracting content from {url}: {str(e)}")
+            # נחזיר פרטי השגיאה לצורך debug
+            return {'error': str(e), 'url': url}
+    
+    def extract_content_fallback(self, url: str) -> Optional[Dict]:
+        """שיטה חלופית להוצאת תוכן"""
+        try:
+            import requests
+            from bs4 import BeautifulSoup
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # חפש כותרת
+            title = None
+            for selector in ['h1', 'title', '.headline', '.title']:
+                title_elem = soup.select_one(selector)
+                if title_elem and title_elem.get_text().strip():
+                    title = title_elem.get_text().strip()
+                    break
+            
+            # חפש תוכן
+            text = ""
+            for selector in ['article', '.content', '.article-body', 'main', '.post-content']:
+                content_elem = soup.select_one(selector)
+                if content_elem:
+                    text = content_elem.get_text().strip()
+                    break
+            
+            if not text:
+                # אם לא מצאנו, קח את כל הפסקאות
+                paragraphs = soup.find_all('p')
+                text = '\n'.join([p.get_text().strip() for p in paragraphs if p.get_text().strip()])
+            
+            if title and text:
+                return {
+                    'title': title[:200],  # הגבל אורך כותרת
+                    'text': text[:5000],   # הגבל אורך טקסט
+                    'authors': [],
+                    'publish_date': None
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Fallback extraction failed for {url}: {str(e)}")
             return None
     
     def summarize_text(self, text: str, max_length: int = 150) -> str:
@@ -276,7 +333,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """טיפול בקישורים"""
-    url = update.message.text
+    url = update.message.text.strip()
     user_id = update.effective_user.id
     
     # בדיקה שזה אכן קישור
@@ -289,8 +346,29 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # הוצאת תוכן
     article_data = bot.extract_article_content(url)
-    if not article_data:
-        await loading_message.edit_text("❌ מצטער, לא הצלחתי לטעון את הכתבה הזו. אולי הקישור לא נתמך.")
+    
+    # אם יש שגיאה, נציג אותה
+    if article_data and 'error' in article_data:
+        error_msg = f"❌ שגיאה בטעינת הכתבה:\n{article_data['error']}\n\nננסה שיטה אחרת..."
+        await loading_message.edit_text(error_msg)
+        
+        # נסה שיטה חלופית
+        article_data = bot.extract_content_fallback(url)
+    
+    if not article_data or 'error' in article_data:
+        error_details = ""
+        if article_data and 'error' in article_data:
+            error_details = f"\n\nפרטי השגיאה: {article_data['error']}"
+        
+        await loading_message.edit_text(
+            f"❌ מצטער, לא הצלחתי לטעון את הכתבה הזו.\n\n"
+            f"🔗 קישור: {url}\n"
+            f"💡 נסה:\n"
+            f"• לבדוק שהקישור תקין\n"
+            f"• לנסות כתבה מאתר אחר\n"
+            f"• לשלוח קישור ישיר לכתבה (לא לעמוד הבית)"
+            f"{error_details}"
+        )
         return
     
     # סיכום התוכן
@@ -322,11 +400,19 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
+    # הצגת מידע על הכתבה
+    article_info = ""
+    if article_data.get('authors'):
+        article_info += f"✍️ **כותב**: {', '.join(article_data['authors'])}\n"
+    if article_data.get('publish_date'):
+        article_info += f"📅 **תאריך**: {article_data['publish_date']}\n"
+    
     response_text = f"""
 ✅ **הכתבה נשמרה בהצלחה!**
 
 📰 **כותרת**: {article_data['title']}
 📂 **קטגוריה**: {category}
+{article_info}
 📝 **סיכום**:
 {summary}
 
