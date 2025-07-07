@@ -25,7 +25,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # הגדרות קבועות
-TELEGRAM_TOKEN = "7560439844:AAEEVJwLFO44j7QoxZNULRlYlZMKeRK3yP0"
+TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
 OPENAI_API_KEY = "YOUR_OPENAI_API_KEY"  # אופציונלי
 DB_PATH = "read_later.db"
 
@@ -435,6 +435,12 @@ async def tag_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ שגיאה: {str(e)}")
 
+import os
+from flask import Flask, request
+
+# הוסף בתחילת הקובץ
+app = Flask(__name__)
+
 def main():
     """הפעלת הבוט"""
     application = Application.builder().token(TELEGRAM_TOKEN).build()
@@ -451,9 +457,36 @@ def main():
     # טיפול בכפתורים
     application.add_handler(CallbackQueryHandler(button_callback))
     
-    # הפעלת הבוט
+    # הגדרת Webhook
+    PORT = int(os.environ.get('PORT', 8080))
+    WEBHOOK_URL = f"https://your-app-name.onrender.com/webhook"
+    
     print("🤖 הבוט מופעל...")
-    application.run_polling()
+    
+    # הפעלת הבוט עם Webhook
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path="/webhook",
+        webhook_url=WEBHOOK_URL
+    )
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """קבלת עדכונים מטלגרם"""
+    update = request.get_json()
+    application.update_queue.put(update)
+    return 'OK'
+
+@app.route('/')
+def home():
+    """עמוד בית - כדי שRender יבין שזה Web Service"""
+    return "🤖 Telegram Read Later Bot is running!"
+
+@app.route('/health')
+def health():
+    """בדיקת תקינות"""
+    return {"status": "healthy", "bot": "running"}
 
 if __name__ == '__main__':
     main()
