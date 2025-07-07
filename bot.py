@@ -320,6 +320,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📖 איך להשתמש בבוט:
 
 🔸 **שליחת קישור**: פשוט שלח קישור לכתבה
+🔸 **/save [קישור]** - שמירת קישור עם פקודה ספציפית
 🔸 **/saved** - צפייה בכל הכתבות השמורות
 🔸 **/tag [מספר] [קטגוריה] [תגית]** - עדכון קטגוריה ותגיות
    דוגמה: /tag 3 AI חשוב
@@ -330,6 +331,103 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • טכנולוגיה • בריאות • כלכלה • פוליטיקה • השראה • כללי
 """
     await update.message.reply_text(help_text)
+
+async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """פקודת שמירה עם URL"""
+    if not context.args:
+        await update.message.reply_text(
+            "📚 שימוש: /save [קישור]\n"
+            "דוגמה: /save https://example.com/article"
+        )
+        return
+    
+    url = context.args[0].strip()
+    user_id = update.effective_user.id
+    
+    # בדיקה שזה אכן קישור
+    if not re.match(r'https?://', url):
+        await update.message.reply_text("אנא הכנס קישור תקין (מתחיל ב-http או https)")
+        return
+    
+    # הודעת טעינה
+    loading_message = await update.message.reply_text("🔄 שומר את הכתבה...")
+    
+    # הוצאת תוכן
+    article_data = bot.extract_article_content(url)
+    
+    # אם יש שגיאה, נציג אותה
+    if article_data and 'error' in article_data:
+        error_msg = f"❌ שגיאה בטעינת הכתבה:\n{article_data['error']}\n\nננסה שיטה אחרת..."
+        await loading_message.edit_text(error_msg)
+        
+        # נסה שיטה חלופית
+        article_data = bot.extract_content_fallback(url)
+    
+    if not article_data or 'error' in article_data:
+        error_details = ""
+        if article_data and 'error' in article_data:
+            error_details = f"\n\nפרטי השגיאה: {article_data['error']}"
+        
+        await loading_message.edit_text(
+            f"❌ מצטער, לא הצלחתי לטעון את הכתבה הזו.\n\n"
+            f"🔗 קישור: {url}\n"
+            f"💡 נסה:\n"
+            f"• לבדוק שהקישור תקין\n"
+            f"• לנסות כתבה מאתר אחר\n"
+            f"• לשלוח קישור ישיר לכתבה (לא לעמוד הבית)"
+            f"{error_details}"
+        )
+        return
+    
+    # סיכום התוכן
+    await loading_message.edit_text("🤖 מכין סיכום...")
+    summary = bot.summarize_text(article_data['text'])
+    
+    # זיהוי קטגוריה
+    category = bot.detect_category(article_data['title'], article_data['text'])
+    
+    # שמירה במסד נתונים
+    article_id = bot.save_article(
+        user_id=user_id,
+        url=url,
+        title=article_data['title'],
+        summary=summary,
+        full_text=article_data['text'],
+        category=category
+    )
+    
+    # הכנת תגובה עם כפתורים
+    keyboard = [
+        [
+            InlineKeyboardButton("📂 שנה קטגוריה", callback_data=f"change_category_{article_id}"),
+            InlineKeyboardButton("🔍 הצג מלא", callback_data=f"show_full_{article_id}")
+        ],
+        [
+            InlineKeyboardButton("🗑️ מחק", callback_data=f"delete_{article_id}")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # הצגת מידע על הכתבה
+    article_info = ""
+    if article_data.get('authors'):
+        article_info += f"✍️ **כותב**: {', '.join(article_data['authors'])}\n"
+    if article_data.get('publish_date'):
+        article_info += f"📅 **תאריך**: {article_data['publish_date']}\n"
+    
+    response_text = f"""
+✅ **הכתבה נשמרה בהצלחה עם פקודת /save!**
+
+📰 **כותרת**: {article_data['title']}
+📂 **קטגוריה**: {category}
+{article_info}
+📝 **סיכום**:
+{summary}
+
+🔗 **קישור**: {url}
+"""
+    
+    await loading_message.edit_text(response_text, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """טיפול בקישורים"""
@@ -532,6 +630,7 @@ def main():
     # הוספת handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("save", save_command))  # הוספת פקודת save
     application.add_handler(CommandHandler("saved", saved_articles))
     application.add_handler(CommandHandler("tag", tag_command))
     
