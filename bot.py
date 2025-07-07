@@ -2,6 +2,7 @@ import logging
 import sqlite3
 import json
 import re
+import os
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
@@ -11,6 +12,7 @@ from dataclasses import dataclass
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from flask import Flask, request
 
 # ספריות חיצוניות נדרשות
 try:
@@ -215,30 +217,40 @@ class ReadLaterBot:
         conn.commit()
         conn.close()
         
+        logger.info(f"Saved article {article_id} for user {user_id}: {title[:50]}")
         return article_id
     
     def get_user_articles(self, user_id: int, category: str = None) -> List[SavedArticle]:
-        """שליפת כתבות של משתמש"""
+        """שליפת כתבות של משתמש עם debugging"""
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        if category:
-            cursor.execute('''
-                SELECT * FROM articles WHERE user_id = ? AND category = ?
-                ORDER BY date_saved DESC
-            ''', (user_id, category))
-        else:
-            cursor.execute('''
-                SELECT * FROM articles WHERE user_id = ?
-                ORDER BY date_saved DESC
-            ''', (user_id,))
-        
-        articles = []
-        for row in cursor.fetchall():
-            articles.append(SavedArticle(*row))
-        
-        conn.close()
-        return articles
+        try:
+            if category:
+                cursor.execute('''
+                    SELECT * FROM articles WHERE user_id = ? AND category = ?
+                    ORDER BY date_saved DESC
+                ''', (user_id, category))
+            else:
+                cursor.execute('''
+                    SELECT * FROM articles WHERE user_id = ?
+                    ORDER BY date_saved DESC
+                ''', (user_id,))
+            
+            articles = []
+            rows = cursor.fetchall()
+            logger.info(f"Found {len(rows)} articles for user {user_id}")
+            
+            for row in rows:
+                articles.append(SavedArticle(*row))
+            
+            conn.close()
+            return articles
+            
+        except Exception as e:
+            logger.error(f"Error fetching articles for user {user_id}: {e}")
+            conn.close()
+            return []
     
     def update_article_category(self, article_id: int, category: str, tags: str = None):
         """עדכון קטגוריה ותגיות"""
@@ -300,6 +312,9 @@ class ReadLaterBot:
 
 # הגדרת הבוט
 bot = ReadLaterBot(use_openai=False)  # שנה ל-True אם יש לך OpenAI API key
+
+# משתנה גלובלי לapplication
+application = None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """פקודת התחלה"""
@@ -422,40 +437,49 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await loading_message.edit_text(response_text, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def saved_articles(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """הצגת כתבות שמורות"""
+    """הצגת כתבות שמורות עם debugging"""
     user_id = update.effective_user.id
-    articles = bot.get_user_articles(user_id)
     
-    if not articles:
-        await update.message.reply_text("אין לך כתבות שמורות עדיין. שלח לי קישור כדי להתחיל! 📚")
-        return
+    # הודעת טעינה
+    loading_msg = await update.message.reply_text("🔍 מחפש כתבות שמורות...")
     
-    # קיבוץ לפי קטגוריות
-    categories = {}
-    for article in articles:
-        if article.category not in categories:
-            categories[article.category] = []
-        categories[article.category].append(article)
-    
-    response = "📚 **הכתבות השמורות שלך:**\n\n"
-    
-    for category, cat_articles in categories.items():
-        response += f"📂 **{category}** ({len(cat_articles)} כתבות)\n"
-        for i, article in enumerate(cat_articles[:5], 1):  # הצג רק 5 ראשונות
-            response += f"{i}. {article.title[:60]}{'...' if len(article.title) > 60 else ''}\n"
+    try:
+        articles = bot.get_user_articles(user_id)
         
-        if len(cat_articles) > 5:
-            response += f"   ... ועוד {len(cat_articles) - 5} כתבות\n"
-        response += "\n"
-    
-    # הוספת כפתורים לפעולות
-    keyboard = [
-        [InlineKeyboardButton("📊 סטטיסטיקות", callback_data="stats")],
-        [InlineKeyboardButton("💾 גיבוי", callback_data="backup")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text(response, reply_markup=reply_markup, parse_mode='Markdown')
+        if not articles:
+            await loading_msg.edit_text(f"📚 אין לך כתבות שמורות עדיין.\n\n🔍 Debug info: User ID {user_id}\n\nשלח לי קישור כדי להתחיל! 📰")
+            return
+        
+        # קיבוץ לפי קטגוריות
+        categories = {}
+        for article in articles:
+            if article.category not in categories:
+                categories[article.category] = []
+            categories[article.category].append(article)
+        
+        response = f"📚 **הכתבות השמורות שלך:** ({len(articles)} כתבות)\n\n"
+        
+        for category, cat_articles in categories.items():
+            response += f"📂 **{category}** ({len(cat_articles)} כתבות)\n"
+            for i, article in enumerate(cat_articles[:5], 1):  # הצג רק 5 ראשונות
+                response += f"{i}. {article.title[:60]}{'...' if len(article.title) > 60 else ''}\n"
+            
+            if len(cat_articles) > 5:
+                response += f"   ... ועוד {len(cat_articles) - 5} כתבות\n"
+            response += "\n"
+        
+        # הוספת כפתורים לפעולות
+        keyboard = [
+            [InlineKeyboardButton("📊 סטטיסטיקות", callback_data="stats")],
+            [InlineKeyboardButton("💾 גיבוי", callback_data="backup")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await loading_msg.edit_text(response, reply_markup=reply_markup, parse_mode='Markdown')
+        
+    except Exception as e:
+        logger.error(f"Error in saved_articles: {str(e)}")
+        await loading_msg.edit_text(f"❌ שגיאה בטעינת כתבות: {str(e)}")
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """טיפול בלחיצות על כפתורים"""
@@ -519,14 +543,36 @@ async def tag_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ שגיאה: {str(e)}")
 
-import os
-from flask import Flask, request
-
-# הוסף בתחילת הקובץ
+# הגדרת Flask
 app = Flask(__name__)
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """קבלת עדכונים מטלגרם"""
+    try:
+        update_data = request.get_json()
+        if update_data:
+            update = Update.de_json(update_data, application.bot)
+            application.update_queue.put_nowait(update)
+        return 'OK'
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return 'Error', 500
+
+@app.route('/')
+def home():
+    """עמוד בית - כדי שRender יבין שזה Web Service"""
+    return "🤖 Telegram Read Later Bot is running!"
+
+@app.route('/health')
+def health():
+    """בדיקת תקינות"""
+    return {"status": "healthy", "bot": "running"}
 
 def main():
     """הפעלת הבוט"""
+    global application
+    
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
     # הוספת handlers
@@ -541,9 +587,8 @@ def main():
     # טיפול בכפתורים
     application.add_handler(CallbackQueryHandler(button_callback))
     
-    # הגדרת Webhook
+    # הגדרת Webhook אוטומטי
     PORT = int(os.environ.get('PORT', 8080))
-    WEBHOOK_URL = f"https://your-app-name.onrender.com/webhook"
     
     print("🤖 הבוט מופעל...")
     
@@ -552,25 +597,9 @@ def main():
         listen="0.0.0.0",
         port=PORT,
         url_path="/webhook",
-        webhook_url=WEBHOOK_URL
+        webhook_url=None,  # יוגדר אוטומטית
+        drop_pending_updates=True
     )
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    """קבלת עדכונים מטלגרם"""
-    update = request.get_json()
-    application.update_queue.put(update)
-    return 'OK'
-
-@app.route('/')
-def home():
-    """עמוד בית - כדי שRender יבין שזה Web Service"""
-    return "🤖 Telegram Read Later Bot is running!"
-
-@app.route('/health')
-def health():
-    """בדיקת תקינות"""
-    return {"status": "healthy", "bot": "running"}
 
 if __name__ == '__main__':
     main()
