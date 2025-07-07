@@ -46,9 +46,7 @@ class ReadLaterBot:
         self.use_openai = use_openai
         if use_openai:
             openai.api_key = OPENAI_API_KEY
-        else:
-            # HuggingFace summarization model
-            self.summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
+        # הסרנו את HuggingFace summarizer כי PyTorch יקר מדי
         
         self.init_database()
         
@@ -116,12 +114,12 @@ class ReadLaterBot:
                 )
                 return response.choices[0].message.content
             else:
-                # HuggingFace summarization
-                if len(text) > 1000:
-                    text = text[:1000]
-                
-                summary = self.summarizer(text, max_length=max_length, min_length=50, do_sample=False)
-                return summary[0]['summary_text']
+                # סיכום פשוט ללא HuggingFace
+                sentences = text.split('.')[:3]  # 3 משפטים ראשונים
+                summary = '. '.join(sentences).strip()
+                if len(summary) > max_length:
+                    summary = summary[:max_length] + "..."
+                return summary or "סיכום לא זמין"
                 
         except Exception as e:
             logger.error(f"שגיאה בסיכום: {e}")
