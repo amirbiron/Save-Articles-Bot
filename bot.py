@@ -9,7 +9,7 @@ import asyncio
 from flask import Flask, request
 from dataclasses import dataclass
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 # ספריות חיצוניות נדרשות
