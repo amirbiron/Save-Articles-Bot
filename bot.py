@@ -421,19 +421,26 @@ class ReadLaterBot:
         try:
             import re
             
+            logger.info("מתחיל ניקוי טקסט OCR מתקדם")
+            
             # פיצול לשורות
             lines = text.split('\n')
+            logger.info(f"מספר שורות לפני ניקוי: {len(lines)}")
+            
             clean_lines = []
+            removed_lines = []
             
             for line in lines:
                 line = line.strip()
                 
                 # דלג על שורות קצרות מדי
                 if len(line) < 3:
+                    removed_lines.append(f"קצר מדי: '{line}'")
                     continue
                 
                 # דלג על שורות שמכילות רק מספרים
                 if re.match(r'^[\d\s\.\-/]+$', line):
+                    removed_lines.append(f"מספרים בלבד: '{line}'")
                     continue
                 
                 # הסר שורות תאריך נפוצות
@@ -441,7 +448,9 @@ class ReadLaterBot:
                     r'^\d{1,2}[/.]\d{1,2}[/.]\d{2,4}$',  # dd/mm/yyyy או dd.mm.yyyy
                     r'^\d{1,2}\s+(ינואר|פברואר|מרץ|אפריל|מאי|יוני|יולי|אוגוסט|ספטמבר|אוקטובר|נובמבר|דצמבר)\s+\d{4}$',
                     r'^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}$',
-                    r'^(יום\s+)?(ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת),?\s+\d{1,2}[/.]\d{1,2}[/.]\d{2,4}$'
+                    r'^(יום\s+)?(ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת),?\s+\d{1,2}[/.]\d{1,2}[/.]\d{2,4}$',
+                    r'.*\d{1,2}[/.]\d{1,2}[/.]\d{2,4}.*',  # כל שורה שמכילה תאריך
+                    r'.*20\d{2}.*',  # כל שורה שמכילה שנה (2000-2099)
                 ]
                 
                 is_date = False
@@ -451,6 +460,7 @@ class ReadLaterBot:
                         break
                 
                 if is_date:
+                    removed_lines.append(f"תאריך: '{line}'")
                     continue
                 
                 # הסר שורות צילום וקרדיטים
@@ -459,7 +469,10 @@ class ReadLaterBot:
                     r'^.*\s+(צילום|צלם|photo|photographer)\s*[:]\s*.+$',
                     r'^(באדיבות|courtesy|credit):?\s*.+$',
                     r'^(מקור|source):?\s*.+$',
-                    r'^(רויטרס|reuters|ap|afp|getty|shutterstock).*$'
+                    r'^(רויטרס|reuters|ap|afp|getty|shutterstock).*$',
+                    r'.*צילום.*',  # כל שורה שמכילה "צילום"
+                    r'.*באדיבות.*',  # כל שורה שמכילה "באדיבות"
+                    r'.*מקור.*',  # כל שורה שמכילה "מקור"
                 ]
                 
                 is_credit = False
@@ -469,6 +482,7 @@ class ReadLaterBot:
                         break
                 
                 if is_credit:
+                    removed_lines.append(f"קרדיט: '{line}'")
                     continue
                 
                 # הסר כתוביות תמונה נפוצות
@@ -485,6 +499,7 @@ class ReadLaterBot:
                         break
                 
                 if is_caption:
+                    removed_lines.append(f"כתובית: '{line}'")
                     continue
                 
                 # הסר מספרי עמוד ופרקים
@@ -503,19 +518,23 @@ class ReadLaterBot:
                         break
                 
                 if is_page:
+                    removed_lines.append(f"עמוד: '{line}'")
                     continue
                 
                 # הסר קישורים וכתובות אימייל
                 if re.search(r'https?://|www\.|@.*\.com|\.co\.il', line, re.IGNORECASE):
+                    removed_lines.append(f"קישור/אימייל: '{line}'")
                     continue
                 
                 # הסר שורות שמכילות הרבה סימני פיסוק
                 punctuation_ratio = len(re.findall(r'[^\w\s]', line)) / len(line) if len(line) > 0 else 0
                 if punctuation_ratio > 0.5:
+                    removed_lines.append(f"הרבה פיסוק: '{line}'")
                     continue
                 
                 # הסר שורות חוזרות (כותרות שחוזרות)
                 if len(clean_lines) > 0 and line.lower() in [prev_line.lower() for prev_line in clean_lines[-3:]]:
+                    removed_lines.append(f"חוזרת: '{line}'")
                     continue
                 
                 # נקה רווחים מרובים
@@ -529,6 +548,10 @@ class ReadLaterBot:
             
             # ניקוי סופי - הסרת שורות ריקות מרובות
             result = re.sub(r'\n\s*\n\s*\n', '\n\n', result)
+            
+            logger.info(f"ניקוי הושלם: {len(clean_lines)} שורות נשארו, {len(removed_lines)} שורות הוסרו")
+            if removed_lines:
+                logger.info(f"דוגמאות לשורות שהוסרו: {removed_lines[:5]}")
             
             return result.strip()
             
@@ -724,9 +747,14 @@ class ReadLaterBot:
                     }
                 
                 # ניקוי מתקדם של הטקסט
+                logger.info(f"טקסט לפני ניקוי: {len(extracted_text)} תווים")
+                logger.info(f"דוגמת טקסט לפני ניקוי: {extracted_text[:200]}...")
+                
                 final_text = self.clean_ocr_text(extracted_text)
                 lines_count = len(final_text.split('\n'))
-                logger.info(f"טקסט סופי: {len(final_text)} תווים, {lines_count} שורות")
+                
+                logger.info(f"טקסט אחרי ניקוי: {len(final_text)} תווים, {lines_count} שורות")
+                logger.info(f"דוגמת טקסט אחרי ניקוי: {final_text[:200]}...")
                 
                 if len(final_text) < 20:  # הורדתי מ-30 ל-20
                     return {
