@@ -198,7 +198,22 @@ class ReadLaterBot:
             if not text:
                 # אם לא מצאנו, קח את כל הפסקאות
                 paragraphs = soup.find_all('p')
-                text = '\n'.join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 20])
+                filtered_paragraphs = []
+                
+                for p in paragraphs:
+                    p_text = p.get_text().strip()
+                    # סנן פסקאות קצרות או לא רלוונטיות
+                    if len(p_text) < 20:
+                        continue
+                    # הסר פסקאות עם תוכן לא רלוונטי
+                    if any(unwanted in p_text.lower() for unwanted in [
+                        'פרסומת', 'קרא עוד', 'לחץ כאן', 'שתפו', 'תגובות', 
+                        'באדיבות', 'צילום:', 'תמונה:', 'וידאו:', 'גלריה'
+                    ]):
+                        continue
+                    filtered_paragraphs.append(p_text)
+                
+                text = '\n'.join(filtered_paragraphs)
             
             if title and text:
                 return {
@@ -218,26 +233,159 @@ class ReadLaterBot:
             logger.error(f"Fallback extraction failed for {url}: {str(e)}")
             return {'error': str(e), 'url': url}
     
-    def summarize_text(self, text: str, max_length: int = 150) -> str:
-        """סיכום טקסט באמצעות AI"""
+    def clean_text_for_summary(self, text: str) -> str:
+        """ניקוי טקסט לקראת סיכום"""
+        try:
+            # הסרת שורות ריקות מרובות
+            text = re.sub(r'\n\s*\n', '\n', text)
+            
+            # הסרת תוכן לא רלוונטי נפוץ
+            unwanted_patterns = [
+                r'.*קרא עוד.*',
+                r'.*לחץ כאן.*',
+                r'.*המשך קריאה.*',
+                r'.*שתפו.*',
+                r'.*תגובות.*',
+                r'.*צפייה בגלריה.*',
+                r'.*פרסומת.*',
+                r'.*נקבע כי.*הבית המשפט.*',  # תוכן משפטי סטנדרטי
+                r'.*באישור.*',
+                r'.*מצורף.*לינק.*',
+                r'.*טלפון.*פקס.*',
+                r'.*כל הזכויות שמורות.*',
+                r'.*צילום.*ארכיון.*',
+                r'.*יצירת קשר.*'
+            ]
+            
+            for pattern in unwanted_patterns:
+                text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+            
+            # הסרת מקפים מרובים ורווחים מיותרים
+            text = re.sub(r'-{2,}', '', text)
+            text = re.sub(r'\s+', ' ', text)
+            
+            # הסרת תחילות משפט נפוצות שאינן חשובות
+            text = re.sub(r'^.*?(כתב|דיווח|נמסר|נודע)\s*[:]\s*', '', text, flags=re.IGNORECASE)
+            
+            return text.strip()
+            
+        except Exception as e:
+            logger.error(f"שגיאה בניקוי טקסט: {e}")
+            return text
+
+    def extract_important_sentences(self, text: str, max_sentences: int = 5) -> List[str]:
+        """חילוץ משפטים חשובים לסיכום"""
+        try:
+            # ניקוי טקסט
+            clean_text = self.clean_text_for_summary(text)
+            
+            # חלוקה למשפטים
+            sentences = re.split(r'[.!?]+', clean_text)
+            sentences = [s.strip() for s in sentences if len(s.strip()) > 20]
+            
+            if not sentences:
+                return []
+            
+            # מילות מפתח שמציינות חשיבות
+            important_keywords = [
+                'החליט', 'החלטה', 'אישר', 'דחה', 'מנע', 'אסר', 'התיר',
+                'מצא', 'גילה', 'חשף', 'העלה', 'הציג', 'פרסם', 'הכריז',
+                'עלה', 'ירד', 'גדל', 'קטן', 'הגיע', 'הגדיל', 'הקטין',
+                'ראשון', 'ראשונה', 'חדש', 'חדשה', 'יחיד', 'יחידה',
+                'עיקרי', 'עיקרית', 'מרכזי', 'מרכזית', 'חשוב', 'חשובה',
+                'בעיקר', 'בעיקר', 'יתר על כן', 'בנוסף', 'כמו כן',
+                'אמר', 'אמרה', 'טען', 'טענה', 'הודיע', 'הודיעה',
+                'מיליון', 'מיליארד', 'אלף', 'אחוז', 'שנים', '%'
+            ]
+            
+            # ציון חשיבות לכל משפט
+            sentence_scores = []
+            
+            for sentence in sentences:
+                score = 0
+                
+                # ציון לפי מילות מפתח
+                for keyword in important_keywords:
+                    if keyword in sentence:
+                        score += 2
+                
+                # ציון לפי מספרים (סטטיסטיקות חשובות)
+                if re.search(r'\d+', sentence):
+                    score += 1
+                
+                # ציון לפי מיקום (משפטים ראשונים חשובים יותר)
+                position_bonus = max(0, 3 - sentences.index(sentence))
+                score += position_bonus
+                
+                # ציון לפי אורך (לא קצר מדי, לא ארוך מדי)
+                length = len(sentence.split())
+                if 8 <= length <= 25:
+                    score += 1
+                elif length > 30:
+                    score -= 1
+                
+                # הוספת ציון לפי תוכן רלוונטי
+                if any(word in sentence.lower() for word in ['משטרה', 'צהל', 'ממשלה', 'כנסת', 'בית משפט']):
+                    score += 1
+                
+                sentence_scores.append((sentence, score))
+            
+            # מיון לפי ציון ובחירת המשפטים הטובים ביותר
+            sentence_scores.sort(key=lambda x: x[1], reverse=True)
+            
+            # החזרת המשפטים החשובים ביותר
+            important_sentences = [sentence for sentence, score in sentence_scores[:max_sentences] if score > 0]
+            
+            return important_sentences[:max_sentences]
+            
+        except Exception as e:
+            logger.error(f"שגיאה בחילוץ משפטים חשובים: {e}")
+            return []
+
+    def summarize_text(self, text: str, max_length: int = 300) -> str:
+        """סיכום טקסט משופר"""
         try:
             if self.use_openai:
                 response = openai.ChatCompletion.create(
                     model="gpt-3.5-turbo",
                     messages=[
-                        {"role": "system", "content": "אתה מסכם כתבות בעברית. צור סיכום קצר וחד של הכתבה."},
-                        {"role": "user", "content": f"סכם את הכתבה הזו: {text[:3000]}"}
+                        {"role": "system", "content": "אתה מסכם כתבות בעברית. צור סיכום ברור ומפורט של הכתבה בעברית זורמת."},
+                        {"role": "user", "content": f"סכם את הכתבה הזו בפסקה אחת מפורטת: {text[:4000]}"}
                     ],
                     max_tokens=max_length,
                     temperature=0.3
                 )
                 return response.choices[0].message.content
             else:
-                # סיכום פשוט ללא HuggingFace
-                sentences = text.split('.')[:3]  # 3 משפטים ראשונים
-                summary = '. '.join(sentences).strip()
+                # סיכום משופר ללא AI
+                important_sentences = self.extract_important_sentences(text, max_sentences=6)
+                
+                if not important_sentences:
+                    # נסיגה לסיכום פשוט אם לא נמצאו משפטים חשובים
+                    clean_text = self.clean_text_for_summary(text)
+                    sentences = clean_text.split('.')[:4]
+                    summary = '. '.join([s.strip() for s in sentences if len(s.strip()) > 10]).strip()
+                    if summary and not summary.endswith('.'):
+                        summary += '.'
+                    return summary or "סיכום לא זמין"
+                
+                # חיבור המשפטים החשובים לסיכום
+                summary = '. '.join(important_sentences)
+                
+                # ודא שהסיכום לא ארוך מדי
                 if len(summary) > max_length:
-                    summary = summary[:max_length] + "..."
+                    # קצר בעדינות לפי נקודות
+                    summary = summary[:max_length]
+                    last_period = summary.rfind('.')
+                    if last_period > max_length * 0.7:  # אם הנקודה האחרונה לא רחוקה מדי
+                        summary = summary[:last_period + 1]
+                    else:
+                        summary = summary + "..."
+                
+                # ודא שהסיכום נגמר בנקודה
+                if summary and not summary.endswith('.') and not summary.endswith('...'):
+                    summary += '.'
+                
                 return summary or "סיכום לא זמין"
                 
         except Exception as e:
