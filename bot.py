@@ -31,6 +31,13 @@ from cachetools import TTLCache
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
+# Enhanced logging setup - moved to top for better compatibility
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 # Performance monitoring
 @dataclass
 class PerformanceMetrics:
@@ -59,13 +66,6 @@ content_cache = TTLCache(maxsize=500, ttl=1800)  # 30 min cache
 # Database connection pool
 db_pool = None
 DB_PATH = "read_later.db"
-
-# Enhanced logging setup
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 # Database connection pooling
 class DatabasePool:
