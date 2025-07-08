@@ -224,12 +224,14 @@ class ReadLaterBot:
         
         if category:
             cursor.execute('''
-                SELECT * FROM articles WHERE user_id = ? AND category = ?
+                SELECT id, url, title, summary, full_text, category, tags, date_saved, user_id 
+                FROM articles WHERE user_id = ? AND category = ?
                 ORDER BY date_saved DESC
             ''', (user_id, category))
         else:
             cursor.execute('''
-                SELECT * FROM articles WHERE user_id = ?
+                SELECT id, url, title, summary, full_text, category, tags, date_saved, user_id 
+                FROM articles WHERE user_id = ?
                 ORDER BY date_saved DESC
             ''', (user_id,))
         
