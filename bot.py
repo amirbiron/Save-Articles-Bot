@@ -628,7 +628,56 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("confirm_delete_"):
         article_id = int(data.split("_")[2])
         bot.delete_article(article_id, user_id)
-        await query.edit_message_text("🗑️ הכתבה נמחקה בהצלחה")
+        
+        # חזרה לרשימה המעודכנת אחרי מחיקה
+        articles = bot.get_user_articles(user_id)
+        
+        if not articles:
+            await query.edit_message_text("🗑️ הכתבה נמחקה בהצלחה!\n\n📚 אין לך יותר כתבות שמורות.")
+            return
+        
+        # הצגת הרשימה המעודכנת
+        response = f"🗑️ **הכתבה נמחקה בהצלחה!**\n\n📋 **הכתבות שלך** ({len(articles)} כתבות)\n\nבחר כתבה לצפייה או מחיקה:"
+        
+        keyboard = []
+        
+        # הצגת עד 8 כתבות (2 בכל שורה)
+        for i in range(0, min(len(articles), 8), 2):
+            row = []
+            
+            # כתבה ראשונה בשורה
+            article1 = articles[i]
+            title1 = f"{article1.title[:20]}{'...' if len(article1.title) > 20 else ''}"
+            row.append(InlineKeyboardButton(f"👁️ {title1}", callback_data=f"view_article_{article1.id}"))
+            
+            # כתבה שנייה בשורה (אם קיימת)
+            if i + 1 < len(articles):
+                article2 = articles[i + 1]
+                title2 = f"{article2.title[:20]}{'...' if len(article2.title) > 20 else ''}"
+                row.append(InlineKeyboardButton(f"👁️ {title2}", callback_data=f"view_article_{article2.id}"))
+            
+            keyboard.append(row)
+        
+        # כפתורי מחיקה מהירה לכתבות ראשונות
+        if len(articles) >= 4:
+            delete_row = []
+            for i in range(min(4, len(articles))):
+                article = articles[i]
+                delete_row.append(InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}"))
+            keyboard.append(delete_row)
+        
+        # אם יש יותר מ-8 כתבות
+        if len(articles) > 8:
+            keyboard.append([InlineKeyboardButton(f"📋 הצג עוד {len(articles) - 8} כתבות", callback_data="show_more_list")])
+        
+        # כפתורי ניווט
+        keyboard.append([
+            InlineKeyboardButton("📚 תצוגת קטגוריות", callback_data="show_categories"),
+            InlineKeyboardButton("📊 סטטיסטיקות", callback_data="stats")
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(response, reply_markup=reply_markup, parse_mode='Markdown')
         
     elif data == "cancel_delete":
         await query.edit_message_text("❌ המחיקה בוטלה")
