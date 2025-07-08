@@ -482,6 +482,38 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bot.delete_article(article_id, user_id)
         await query.edit_message_text("🗑️ הכתבה נמחקה בהצלחה")
         
+    elif data.startswith("change_category_"):
+        article_id = int(data.split("_")[2])
+        # הצגת אפשרויות קטגוריות
+        categories = ['טכנולוגיה', 'בריאות', 'כלכלה', 'פוליטיקה', 'השראה', 'כללי']
+        
+        keyboard = []
+        for i in range(0, len(categories), 2):  # שתי קטגוריות בכל שורה
+            row = []
+            row.append(InlineKeyboardButton(categories[i], callback_data=f"set_cat_{article_id}_{categories[i]}"))
+            if i + 1 < len(categories):
+                row.append(InlineKeyboardButton(categories[i + 1], callback_data=f"set_cat_{article_id}_{categories[i + 1]}"))
+            keyboard.append(row)
+        
+        # כפתור חזרה
+        keyboard.append([InlineKeyboardButton("↩️ חזור", callback_data=f"back_to_article_{article_id}")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text("📂 **בחר קטגוריה חדשה:**", reply_markup=reply_markup, parse_mode='Markdown')
+        
+    elif data.startswith("set_cat_"):
+        # עדכון הקטגוריה
+        parts = data.split("_", 3)  # ["set", "cat", article_id, category]
+        article_id = int(parts[2])
+        new_category = parts[3]
+        
+        bot.update_article_category(article_id, new_category)
+        await query.edit_message_text(f"✅ **הקטגוריה עודכנה בהצלחה!**\n\n📂 קטגוריה חדשה: **{new_category}**", parse_mode='Markdown')
+        
+    elif data.startswith("back_to_article_"):
+        article_id = int(data.split("_")[-1])  # לקח את האלמנט האחרון
+        await query.edit_message_text("↩️ חזרה לכתבה...")
+        
     elif data == "backup":
         # יצירת גיבוי
         backup_data = bot.export_articles(user_id, 'json')
