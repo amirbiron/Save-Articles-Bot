@@ -1,4 +1,4 @@
-THIS SHOULD BE A LINTER ERRORimport logging
+import logging
 import sqlite3
 import json
 import re
@@ -209,14 +209,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 🔸 שלח לי קישור לכתבה, ואני אסכם ואשמור אותה לך במקום מסודר.
 🔸 השתמש בלחצנים למטה לניווט מהיר
-🔸 השתמש ב-/help לעזרה נוספת
+🔸 או השתמש ב-/help לעזרה נוספת
 
 קדימה, שלח לי קישור לכתבה מעניינת! 🚀
 """
     
     # יצירת לחצנים קבועים מתחת לשורת ההקלדה
     keyboard = [
-        [KeyboardButton("📚 רשימת כתבות"), KeyboardButton("📂 קטגוריות")],
+        [KeyboardButton("📚 רשימת כתבות"), KeyboardButton("📖 כתבות שלי")],
         [KeyboardButton("💾 גיבוי"), KeyboardButton("🔍 חיפוש")],
         [KeyboardButton("🆘 עזרה"), KeyboardButton("📊 סטטיסטיקות")]
     ]
@@ -237,6 +237,47 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • טכנולוגיה • בריאות • כלכלה • פוליטיקה • השראה • כללי
 """
     await update.message.reply_text(help_text)
+
+async def handle_keyboard_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """טיפול בלחצנים הקבועים"""
+    text = update.message.text.strip()
+    
+    if text == "📚 רשימת כתבות" or text == "📖 כתבות שלי":
+        await saved_articles(update, context)
+    elif text == "📊 סטטיסטיקות":
+        await show_statistics(update, context)
+    elif text == "🆘 עזרה":
+        await help_command(update, context)
+    elif text == "🔍 חיפוש":
+        await update.message.reply_text("🔍 פונקציית חיפוש בפיתוח...")
+    elif text == "💾 גיבוי":
+        await update.message.reply_text("💾 פונקציית גיבוי בפיתוח...")
+    else:
+        # אם זה לא לחצן, בדוק אם זה קישור
+        await handle_url(update, context)
+
+async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """הצגת סטטיסטיקות"""
+    user_id = update.effective_user.id
+    articles = bot.get_user_articles(user_id)
+    
+    if not articles:
+        await update.message.reply_text("📊 אין עדיין נתונים לסטטיסטיקות")
+        return
+    
+    # חישוב סטטיסטיקות
+    categories = {}
+    for article in articles:
+        categories[article.category] = categories.get(article.category, 0) + 1
+    
+    stats_text = f"📊 **הסטטיסטיקות שלך**\n\n"
+    stats_text += f"📚 סה\"כ כתבות: {len(articles)}\n\n"
+    stats_text += "📂 **לפי קטגוריות:**\n"
+    
+    for category, count in categories.items():
+        stats_text += f"• {category}: {count} כתבות\n"
+    
+    await update.message.reply_text(stats_text, parse_mode='Markdown')
 
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """טיפול בקישורים"""
@@ -334,7 +375,7 @@ def get_telegram_app():
         telegram_app.add_handler(CommandHandler("start", start))
         telegram_app.add_handler(CommandHandler("help", help_command))
         telegram_app.add_handler(CommandHandler("saved", saved_articles))
-        telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
+        telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_keyboard_buttons))
         telegram_app.add_handler(CallbackQueryHandler(button_callback))
         
         print("🤖 הבוט הוגדר בהצלחה!")
