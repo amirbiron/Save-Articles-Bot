@@ -519,9 +519,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 📰 **{article.title}**
 
-📂 **קטגוריה**: {article.category}
-📅 **נשמר**: {date_only}
-📊 **אורך**: {word_count:,} מילים (קריאה של ~{reading_time} דקות)
+📂 **קטגוריה**: **{article.category}**
+📅 **נשמר**: **{date_only}**
+📊 **אורך**: **{word_count:,} מילים** (קריאה של ~{reading_time} דקות)
 🔗 **מקור**: [לחץ כאן]({article.url})
 
 {'─' * 30}
