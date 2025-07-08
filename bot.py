@@ -416,6 +416,196 @@ class ReadLaterBot:
         
         return 'כללי'
     
+    def clean_ocr_text(self, text: str) -> str:
+        """ניקוי מתקדם של טקסט שחולץ מתמונה"""
+        try:
+            import re
+            
+            # פיצול לשורות
+            lines = text.split('\n')
+            clean_lines = []
+            
+            for line in lines:
+                line = line.strip()
+                
+                # דלג על שורות קצרות מדי
+                if len(line) < 3:
+                    continue
+                
+                # דלג על שורות שמכילות רק מספרים
+                if re.match(r'^[\d\s\.\-/]+$', line):
+                    continue
+                
+                # הסר שורות תאריך נפוצות
+                date_patterns = [
+                    r'^\d{1,2}[/.]\d{1,2}[/.]\d{2,4}$',  # dd/mm/yyyy או dd.mm.yyyy
+                    r'^\d{1,2}\s+(ינואר|פברואר|מרץ|אפריל|מאי|יוני|יולי|אוגוסט|ספטמבר|אוקטובר|נובמבר|דצמבר)\s+\d{4}$',
+                    r'^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}$',
+                    r'^(יום\s+)?(ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת),?\s+\d{1,2}[/.]\d{1,2}[/.]\d{2,4}$'
+                ]
+                
+                is_date = False
+                for pattern in date_patterns:
+                    if re.match(pattern, line, re.IGNORECASE):
+                        is_date = True
+                        break
+                
+                if is_date:
+                    continue
+                
+                # הסר שורות צילום וקרדיטים
+                photographer_patterns = [
+                    r'^(צילום|צלם|photo|photographer|by):?\s*.+$',
+                    r'^.*\s+(צילום|צלם|photo|photographer)\s*[:]\s*.+$',
+                    r'^(באדיבות|courtesy|credit):?\s*.+$',
+                    r'^(מקור|source):?\s*.+$',
+                    r'^(רויטרס|reuters|ap|afp|getty|shutterstock).*$'
+                ]
+                
+                is_credit = False
+                for pattern in photographer_patterns:
+                    if re.match(pattern, line, re.IGNORECASE):
+                        is_credit = True
+                        break
+                
+                if is_credit:
+                    continue
+                
+                # הסר כתוביות תמונה נפוצות
+                caption_patterns = [
+                    r'^(בתמונה|בצילום|במרכז|משמאל|מימין|למעלה|למטה):?\s*.+$',
+                    r'^(מלמעלה|מלמטה|מימין|משמאל|באמצע):?\s*.+$',
+                    r'^.*\s+(בתמונה|בצילום)\s*[:]\s*.+$'
+                ]
+                
+                is_caption = False
+                for pattern in caption_patterns:
+                    if re.match(pattern, line, re.IGNORECASE):
+                        is_caption = True
+                        break
+                
+                if is_caption:
+                    continue
+                
+                # הסר מספרי עמוד ופרקים
+                page_patterns = [
+                    r'^עמוד\s+\d+$',
+                    r'^עמ\'\s*\d+$',
+                    r'^page\s+\d+$',
+                    r'^p\.\s*\d+$',
+                    r'^\d+\s*$'  # שורות עם מספר בלבד
+                ]
+                
+                is_page = False
+                for pattern in page_patterns:
+                    if re.match(pattern, line, re.IGNORECASE):
+                        is_page = True
+                        break
+                
+                if is_page:
+                    continue
+                
+                # הסר קישורים וכתובות אימייל
+                if re.search(r'https?://|www\.|@.*\.com|\.co\.il', line, re.IGNORECASE):
+                    continue
+                
+                # הסר שורות שמכילות הרבה סימני פיסוק
+                punctuation_ratio = len(re.findall(r'[^\w\s]', line)) / len(line) if len(line) > 0 else 0
+                if punctuation_ratio > 0.5:
+                    continue
+                
+                # הסר שורות חוזרות (כותרות שחוזרות)
+                if len(clean_lines) > 0 and line.lower() in [prev_line.lower() for prev_line in clean_lines[-3:]]:
+                    continue
+                
+                # נקה רווחים מרובים
+                line = re.sub(r'\s+', ' ', line)
+                
+                # הוסף את השורה המנוקה
+                clean_lines.append(line)
+            
+            # חיבור השורות חזרה
+            result = '\n'.join(clean_lines)
+            
+            # ניקוי סופי - הסרת שורות ריקות מרובות
+            result = re.sub(r'\n\s*\n\s*\n', '\n\n', result)
+            
+            return result.strip()
+            
+        except Exception as e:
+            logger.error(f"שגיאה בניקוי טקסט OCR: {e}")
+            # אם יש שגיאה, החזר ניקוי בסיסי
+            lines = text.split('\n')
+            basic_clean = [line.strip() for line in lines if len(line.strip()) > 3]
+            return '\n'.join(basic_clean)
+    
+    def extract_title_from_ocr_text(self, text: str) -> str:
+        """חילוץ כותרת חכם מטקסט OCR מנוקה"""
+        try:
+            lines = text.split('\n')
+            if not lines:
+                return 'כותרת מתמונה'
+            
+            # מצא את השורה הטובה ביותר לכותרת
+            title_candidates = []
+            
+            for i, line in enumerate(lines[:5]):  # בדוק את 5 השורות הראשונות
+                line = line.strip()
+                if len(line) < 5:  # שורות קצרות מדי
+                    continue
+                
+                score = 0
+                
+                # נקודות חיוביות
+                # שורות ראשונות מקבלות יותר נקודות
+                score += (5 - i) * 2
+                
+                # אורך מתאים (לא קצר מדי, לא ארוך מדי לכותרת)
+                if 10 <= len(line) <= 120:
+                    score += 3
+                elif 5 <= len(line) <= 150:
+                    score += 1
+                
+                # אם יש אותיות גדולות - סימן טוב לכותרת
+                if any(c.isupper() for c in line):
+                    score += 1
+                
+                # אם אין סימני פיסוק מוזרים
+                if not any(char in line for char in ['(', ')', '[', ']', '@', '#']):
+                    score += 1
+                
+                # נקודות שליליות
+                # אם יש הרבה מספרים - כנראה לא כותרת
+                numbers_count = len([c for c in line if c.isdigit()])
+                if numbers_count > len(line) * 0.3:
+                    score -= 2
+                
+                # אם השורה מתחילה במילות מפתח לא מתאימות לכותרת
+                lower_line = line.lower()
+                bad_starts = ['לפי', 'על פי', 'כך', 'זה', 'היא', 'הוא', 'כמו', 'אבל', 'גם']
+                if any(lower_line.startswith(bad) for bad in bad_starts):
+                    score -= 1
+                
+                title_candidates.append((line, score))
+            
+            # מיין לפי ציון ובחר את הטוב ביותר
+            title_candidates.sort(key=lambda x: x[1], reverse=True)
+            
+            if title_candidates and title_candidates[0][1] > 0:
+                return title_candidates[0][0][:200]  # הגבל אורך
+            else:
+                # אם לא נמצאה כותרת טובה, קח את השורה הראשונה המתאימה
+                for line in lines[:3]:
+                    if len(line.strip()) >= 5:
+                        return line.strip()[:200]
+                
+                return 'כותרת מתמונה'
+                
+        except Exception as e:
+            logger.error(f"שגיאה בחילוץ כותרת: {e}")
+            lines = text.split('\n')
+            return lines[0][:200] if lines and lines[0].strip() else 'כותרת מתמונה'
+    
     def extract_text_from_image(self, image_path: str) -> Dict:
         """חילוץ טקסט מתמונה באמצעות OCR"""
         try:
@@ -533,17 +723,10 @@ class ReadLaterBot:
                         'message': 'לא נמצא מספיק טקסט בתמונה. אנא וודא שהתמונה ברורה וכוללת טקסט קריא.'
                     }
                 
-                # הסרת תווים לא רלוונטיים ושורות ריקות
-                lines = extracted_text.split('\n')
-                clean_lines = []
-                
-                for line in lines:
-                    line = line.strip()
-                    if len(line) > 3:  # רק שורות עם תוכן משמעותי (הורדתי מ-5 ל-3)
-                        clean_lines.append(line)
-                
-                final_text = '\n'.join(clean_lines)
-                logger.info(f"טקסט סופי: {len(final_text)} תווים, {len(clean_lines)} שורות")
+                # ניקוי מתקדם של הטקסט
+                final_text = self.clean_ocr_text(extracted_text)
+                lines_count = len(final_text.split('\n'))
+                logger.info(f"טקסט סופי: {len(final_text)} תווים, {lines_count} שורות")
                 
                 if len(final_text) < 20:  # הורדתי מ-30 ל-20
                     return {
@@ -551,14 +734,8 @@ class ReadLaterBot:
                         'message': 'לא נמצא מספיק טקסט בתמונה. אנא וודא שהתמונה ברורה וכוללת טקסט קריא.'
                     }
                 
-                # חיפוש כותרת - השורה הראשונה הארוכה ביותר
-                lines = final_text.split('\n')
-                title = lines[0] if lines else 'כותרת מתמונה'
-                
-                # אם השורה הראשונה קצרה מדי, נחפש שורה ארוכה יותר
-                for line in lines[:3]:  # בדוק את 3 השורות הראשונות
-                    if len(line) > len(title):
-                        title = line
+                # חיפוש כותרת חכם יותר
+                title = self.extract_title_from_ocr_text(final_text)
                 
                 logger.info(f"כותרת שזוהתה: {title[:50]}...")
                 
@@ -826,6 +1003,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • השתמש בתאורה טובה
 • תמיכה בעברית ואנגלית
 • הבוט יזהה אוטומטית את השפה
+• הבוט יסיר אוטומטית תאריכים וקרדיטים
 
 ⚡ <b>פקודות מתקדמות (אופציונלי):</b>
 • /delete [מספר] - מחיקת כתבה לפי מספר
