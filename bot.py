@@ -327,7 +327,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🔸 **/saved** - צפייה בכל הכתבות השמורות
 🔸 **/tag [מספר] [קטגוריה] [תגית]** - עדכון קטגוריה ותגיות
    דוגמה: /tag 3 AI חשוב
-🔸 **/backup** - קובץ גיבוי של כל הכתבות
+🔸 **/backup** - גיבוי טקסט נח לקריאה (או `/backup json` לקובץ טכני)
 🔸 **/categories** - רשימת הקטגוריות הזמינות
 
 📂 **קטגוריות אוטומטיות**:
@@ -629,11 +629,17 @@ async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("אין לך כתבות שמורות לגיבוי. שלח לי קישור כדי להתחיל! 📚")
         return
     
+    # בדיקה איזה פורמט התבקש
+    format_type = 'text'  # ברירת מחדל - טקסט נח לקריאה
+    if context.args and context.args[0].lower() == 'json':
+        format_type = 'json'
+    
     # יצירת גיבוי
-    backup_data = bot.export_articles(user_id, 'json')
+    backup_data = bot.export_articles(user_id, format_type)
     
     # שמירת הקובץ
-    filename = f"backup_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    file_extension = 'txt' if format_type == 'text' else 'json'
+    filename = f"backup_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{file_extension}"
     
     try:
         with open(filename, 'w', encoding='utf-8') as f:
@@ -641,10 +647,13 @@ async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # שליחת הקובץ למשתמש
         with open(filename, 'rb') as f:
+            display_filename = f"כתבות_שמורות_{datetime.now().strftime('%Y-%m-%d')}.{file_extension}"
+            format_desc = "קובץ טקסט נח לקריאה" if format_type == 'text' else "קובץ JSON טכני"
+            
             await update.message.reply_document(
                 document=f,
-                filename=f"כתבות_שמורות_{datetime.now().strftime('%Y-%m-%d')}.json",
-                caption=f"💾 **גיבוי הכתבות שלך**\n\n📚 {len(articles)} כתבות\n📅 {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+                filename=display_filename,
+                caption=f"💾 **גיבוי הכתבות שלך** ({format_desc})\n\n📚 {len(articles)} כתבות\n📅 {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n💡 לגיבוי JSON טכני השתמש: `/backup json`"
             )
         
         # מחיקת הקובץ הזמני
