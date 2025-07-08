@@ -817,7 +817,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # כפתורי ניווט
         keyboard.append([
             InlineKeyboardButton("📚 תצוגת קטגוריות", callback_data="show_categories"),
-            InlineKeyboardButton("📊 סטטיסטיקות", callback_data="stats")
+            InlineKeyboardButton("� חיפוש", callback_data="search")
+        ])
+        keyboard.append([
+            InlineKeyboardButton("� סטטיסטיקות", callback_data="stats")
         ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -847,7 +850,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # כפתורי פעולות נוספות
         keyboard.append([
-            InlineKeyboardButton("📊 סטטיסטיקות", callback_data="stats"),
+            InlineKeyboardButton("� חיפוש", callback_data="search"),
+            InlineKeyboardButton("� סטטיסטיקות", callback_data="stats")
+        ])
+        keyboard.append([
             InlineKeyboardButton("💾 גיבוי", callback_data="backup")
         ])
         
@@ -881,6 +887,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # כפתורי ניווט
         keyboard.append([
             InlineKeyboardButton("📚 תצוגת קטגוריות", callback_data="show_categories"),
+            InlineKeyboardButton("🔍 חיפוש", callback_data="search")
+        ])
+        keyboard.append([
             InlineKeyboardButton("📊 סטטיסטיקות", callback_data="stats")
         ])
         
@@ -903,7 +912,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # כפתורי פעולות
         keyboard.append([
-            InlineKeyboardButton("📊 סטטיסטיקות", callback_data="stats"),
+            InlineKeyboardButton("🔍 חיפוש", callback_data="search"),
+            InlineKeyboardButton("📊 סטטיסטיקות", callback_data="stats")
+        ])
+        keyboard.append([
             InlineKeyboardButton("💾 גיבוי", callback_data="backup")
         ])
         
@@ -931,7 +943,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 response += f"   ... ועוד {len(cat_articles) - 3} כתבות\n"
             response += "\n"
         
-        keyboard = [[InlineKeyboardButton("↩️ חזור לרשימה", callback_data="back_to_list")]]
+        keyboard = [
+            [InlineKeyboardButton("↩️ חזור לרשימה", callback_data="back_to_list")],
+            [InlineKeyboardButton("🔍 חיפוש", callback_data="search")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(response, reply_markup=reply_markup, parse_mode='Markdown')
@@ -956,7 +971,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # כפתורי ניווט
         keyboard.append([
             InlineKeyboardButton("📚 תצוגת קטגוריות", callback_data="show_categories"),
-            InlineKeyboardButton("📊 סטטיסטיקות", callback_data="stats")
+            InlineKeyboardButton("� חיפוש", callback_data="search")
+        ])
+        keyboard.append([
+            InlineKeyboardButton("�� סטטיסטיקות", callback_data="stats")
         ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
