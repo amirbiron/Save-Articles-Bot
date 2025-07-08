@@ -644,7 +644,8 @@ async def handle_url(url: str, update: Update, context: ContextTypes.DEFAULT_TYP
     # שליחת הודעה נוספת עם המקלדת הקבועה
     await update.message.reply_text(
         "💡 **מה תרצה לעשות עכשיו?**\n\nהשתמש בכפתורים למטה:",
-        reply_markup=get_main_keyboard()
+        reply_markup=get_main_keyboard(),
+        parse_mode='Markdown'
     )
 
 async def saved_articles(update: Update, context: ContextTypes.DEFAULT_TYPE):
