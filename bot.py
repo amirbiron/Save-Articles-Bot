@@ -278,7 +278,7 @@ class ContentExtractor:
     async def _parse_content(self, html: str, url: str) -> Optional[Dict]:
         """Parse HTML content efficiently"""
         try:
-            # Use html.parser for better compatibility on all platforms
+            # Use html.parser for maximum compatibility
             soup = BeautifulSoup(html, 'html.parser')
             
             # Remove unwanted elements
