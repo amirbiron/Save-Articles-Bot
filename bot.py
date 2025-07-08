@@ -415,32 +415,106 @@ class ReadLaterBot:
     def extract_text_from_image(self, image_path: str) -> Dict:
         """חילוץ טקסט מתמונה באמצעות OCR"""
         try:
+            logger.info(f"מתחיל עיבוד תמונה: {image_path}")
+            
+            # בדיקה שהקובץ קיים
+            import os
+            if not os.path.exists(image_path):
+                logger.error(f"קובץ התמונה לא נמצא: {image_path}")
+                return {
+                    'error': 'file_not_found',
+                    'message': 'קובץ התמונה לא נמצא במערכת.'
+                }
+            
+            # בדיקת גודל הקובץ
+            file_size = os.path.getsize(image_path)
+            logger.info(f"גודל קובץ התמונה: {file_size} bytes")
+            
+            if file_size == 0:
+                return {
+                    'error': 'empty_file',
+                    'message': 'קובץ התמונה ריק.'
+                }
+            
             # פתיחת התמונה
-            image = Image.open(image_path)
+            try:
+                image = Image.open(image_path)
+                logger.info(f"התמונה נפתחה בהצלחה. גודל: {image.size}, מצב: {image.mode}")
+            except Exception as e:
+                logger.error(f"שגיאה בפתיחת התמונה: {e}")
+                return {
+                    'error': 'invalid_image',
+                    'message': f'לא ניתן לפתוח את התמונה. פרטי השגיאה: {str(e)}'
+                }
             
             # שיפור איכות התמונה לOCR טוב יותר
-            # המרה לגוונים של אפור
-            if image.mode != 'L':
-                image = image.convert('L')
+            try:
+                # המרה לגוונים של אפור
+                if image.mode != 'L':
+                    image = image.convert('L')
+                    logger.info("התמונה הומרה לגוונים של אפור")
+                
+                # שיפור הניגודיות
+                from PIL import ImageEnhance
+                enhancer = ImageEnhance.Contrast(image)
+                image = enhancer.enhance(1.5)  # הגדלת ניגודיות
+                logger.info("ניגודיות התמונה שופרה")
+                
+            except Exception as e:
+                logger.error(f"שגיאה בשיפור התמונה: {e}")
+                # נמשיך עם התמונה המקורית
             
             # ניסיון חילוץ טקסט בעברית ואנגלית
             try:
+                logger.info("מתחיל זיהוי טקסט...")
+                
+                # בדיקה ש-Tesseract זמין
+                try:
+                    tesseract_version = pytesseract.get_tesseract_version()
+                    logger.info(f"Tesseract version: {tesseract_version}")
+                except Exception as e:
+                    logger.error(f"Tesseract לא זמין: {e}")
+                    return {
+                        'error': 'tesseract_unavailable',
+                        'message': 'מנוע זיהוי הטקסט לא זמין במערכת.'
+                    }
+                
                 # תחילה ננסה עברית
-                hebrew_text = pytesseract.image_to_string(image, lang='heb')
+                try:
+                    hebrew_text = pytesseract.image_to_string(image, lang='heb', config='--psm 6')
+                    logger.info(f"טקסט עברי זוהה: {len(hebrew_text)} תווים")
+                except Exception as e:
+                    logger.error(f"שגיאה בזיהוי עברית: {e}")
+                    hebrew_text = ""
                 
                 # אם לא מצאנו הרבה עברית, ננסה אנגלית
-                english_text = pytesseract.image_to_string(image, lang='eng')
+                try:
+                    english_text = pytesseract.image_to_string(image, lang='eng', config='--psm 6')
+                    logger.info(f"טקסט אנגלי זוהה: {len(english_text)} תווים")
+                except Exception as e:
+                    logger.error(f"שגיאה בזיהוי אנגלית: {e}")
+                    english_text = ""
                 
                 # בחירת הטקסט הטוב יותר (יותר תווים = יותר טוב)
                 if len(hebrew_text.strip()) > len(english_text.strip()):
                     extracted_text = hebrew_text
                     detected_lang = 'hebrew'
+                    logger.info("נבחרה עברית כשפה עיקרית")
                 else:
                     extracted_text = english_text
                     detected_lang = 'english'
+                    logger.info("נבחרה אנגלית כשפה עיקרית")
                 
                 # ניקוי הטקסט
                 extracted_text = extracted_text.strip()
+                logger.info(f"טקסט לאחר ניקוי ראשוני: {len(extracted_text)} תווים")
+                
+                if len(extracted_text) < 10:
+                    logger.warning("לא נמצא מספיק טקסט בתמונה")
+                    return {
+                        'error': 'insufficient_text',
+                        'message': 'לא נמצא מספיק טקסט בתמונה. אנא וודא שהתמונה ברורה וכוללת טקסט קריא.'
+                    }
                 
                 # הסרת תווים לא רלוונטיים ושורות ריקות
                 lines = extracted_text.split('\n')
@@ -448,12 +522,13 @@ class ReadLaterBot:
                 
                 for line in lines:
                     line = line.strip()
-                    if len(line) > 5:  # רק שורות עם תוכן משמעותי
+                    if len(line) > 3:  # רק שורות עם תוכן משמעותי (הורדתי מ-5 ל-3)
                         clean_lines.append(line)
                 
                 final_text = '\n'.join(clean_lines)
+                logger.info(f"טקסט סופי: {len(final_text)} תווים, {len(clean_lines)} שורות")
                 
-                if len(final_text) < 30:
+                if len(final_text) < 20:  # הורדתי מ-30 ל-20
                     return {
                         'error': 'insufficient_text',
                         'message': 'לא נמצא מספיק טקסט בתמונה. אנא וודא שהתמונה ברורה וכוללת טקסט קריא.'
@@ -467,6 +542,8 @@ class ReadLaterBot:
                 for line in lines[:3]:  # בדוק את 3 השורות הראשונות
                     if len(line) > len(title):
                         title = line
+                
+                logger.info(f"כותרת שזוהתה: {title[:50]}...")
                 
                 return {
                     'title': title[:200],  # הגבל אורך כותרת
@@ -483,10 +560,10 @@ class ReadLaterBot:
                 }
                 
         except Exception as e:
-            logger.error(f"שגיאה בטעינת התמונה: {e}")
+            logger.error(f"שגיאה כללית בטעינת התמונה: {e}")
             return {
                 'error': 'image_load_failed',
-                'message': 'שגיאה בטעינת התמונה. אנא וודא שהתמונה תקינה.'
+                'message': f'שגיאה בטעינת התמונה: {str(e)}'
             }
 
     def extract_keywords(self, title: str, text: str, max_keywords: int = 8) -> str:
@@ -911,13 +988,40 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ocr_result = bot.extract_text_from_image(temp_file_path)
             
             if 'error' in ocr_result:
-                error_msg = f"❌ {ocr_result['message']}\n\n💡 טיפים לתמונה טובה יותר:\n"
-                error_msg += "• ודא שהטקסט ברור וקריא\n"
-                error_msg += "• צלם ישר ולא בזווית\n"
-                error_msg += "• השתמש בתאורה טובה\n"
-                error_msg += "• הגדל את כתב היד אם זה כתב יד"
+                error_type = ocr_result.get('error', 'unknown')
+                error_message = ocr_result.get('message', 'שגיאה לא ידועה')
                 
-                await loading_message.edit_text(error_msg)
+                # הודעת שגיאה מפורטת לפי סוג השגיאה
+                if error_type == 'file_not_found':
+                    error_msg = f"❌ <b>קובץ התמונה לא נמצא</b>\n\n"
+                    error_msg += f"פרטי השגיאה: {error_message}\n\n"
+                    error_msg += f"💡 נסה לשלוח את התמונה שוב"
+                elif error_type == 'invalid_image':
+                    error_msg = f"❌ <b>תמונה לא תקינה</b>\n\n"
+                    error_msg += f"פרטי השגיאה: {error_message}\n\n"
+                    error_msg += f"💡 וודא שאתה שולח תמונה תקינה (JPG/PNG)"
+                elif error_type == 'tesseract_unavailable':
+                    error_msg = f"❌ <b>מנוע זיהוי הטקסט לא זמין</b>\n\n"
+                    error_msg += f"שגיאה טכנית במערכת. צור קשר עם המפתח."
+                elif error_type == 'insufficient_text':
+                    error_msg = f"🔍 <b>לא נמצא מספיק טקסט</b>\n\n"
+                    error_msg += f"{error_message}\n\n"
+                    error_msg += f"💡 טיפים לתמונה טובה יותר:\n"
+                    error_msg += f"• ודא שהטקסט ברור וקריא\n"
+                    error_msg += f"• צלם ישר ולא בזווית\n"
+                    error_msg += f"• השתמש בתאורה טובה\n"
+                    error_msg += f"• הגדל את גודל הטקסט אם אפשר"
+                else:
+                    error_msg = f"❌ <b>שגיאה בעיבוד התמונה</b>\n\n"
+                    error_msg += f"סוג השגיאה: {error_type}\n"
+                    error_msg += f"פרטים: {error_message}\n\n"
+                    error_msg += f"💡 טיפים לתמונה טובה יותר:\n"
+                    error_msg += f"• ודא שהטקסט ברור וקריא\n"
+                    error_msg += f"• צלם ישר ולא בזווית\n"
+                    error_msg += f"• השתמש בתאורה טובה\n"
+                    error_msg += f"• נסה תמונה באיכות גבוהה יותר"
+                
+                await loading_message.edit_text(error_msg, parse_mode='HTML')
                 return
             
             # עיבוד הטקסט שחולץ
@@ -2017,6 +2121,8 @@ def main():
     
     print("🤖 הבוט מופעל במצב polling...")
     print("📱 פקודת /saved אמורה לעבוד עכשיו!")
+    print("📸 תכונת OCR (זיהוי טקסט בתמונות) זמינה!")
+    print("🔧 Debug mode: פעיל - לוגים מפורטים יוצגו")
     
     # הפעלת הבוט עם Polling (לפיתוח מקומי)
     application.run_polling()
