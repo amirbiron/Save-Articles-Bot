@@ -19,9 +19,13 @@ try:
     import openai
     from transformers import pipeline
     import pytesseract
-    from PIL import Image
-except ImportError:
-    print("נדרשות ספריות נוספות: pip install newspaper3k openai transformers torch pytesseract Pillow")
+    from PIL import Image, ImageEnhance
+except ImportError as e:
+    print(f"נדרשות ספריות נוספות: pip install newspaper3k openai transformers torch pytesseract Pillow")
+    print(f"פרטי השגיאה: {e}")
+    pytesseract = None
+    Image = None
+    ImageEnhance = None
 
 # הגדרות
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -415,10 +419,31 @@ class ReadLaterBot:
     def extract_text_from_image(self, image_path: str) -> Dict:
         """חילוץ טקסט מתמונה באמצעות OCR"""
         try:
+            # ייבוא הספריות הנדרשות בתוך הפונקציה
+            import os
+            
+            # בדיקה שהספריות זמינות
+            if pytesseract is None or Image is None:
+                logger.error("ספריות OCR לא זמינות")
+                return {
+                    'error': 'libraries_unavailable',
+                    'message': 'ספריות זיהוי הטקסט לא מותקנות. נדרש התקנת pytesseract ו-Pillow.'
+                }
+            
+            # ייבוא מקומי כגיבוי
+            try:
+                from PIL import Image as PIL_Image, ImageEnhance
+                import pytesseract as tesseract_local
+            except ImportError as e:
+                logger.error(f"שגיאה בייבוא ספריות OCR: {e}")
+                return {
+                    'error': 'import_failed',
+                    'message': f'שגיאה בטעינת ספריות OCR: {str(e)}'
+                }
+            
             logger.info(f"מתחיל עיבוד תמונה: {image_path}")
             
             # בדיקה שהקובץ קיים
-            import os
             if not os.path.exists(image_path):
                 logger.error(f"קובץ התמונה לא נמצא: {image_path}")
                 return {
@@ -438,7 +463,7 @@ class ReadLaterBot:
             
             # פתיחת התמונה
             try:
-                image = Image.open(image_path)
+                image = PIL_Image.open(image_path)
                 logger.info(f"התמונה נפתחה בהצלחה. גודל: {image.size}, מצב: {image.mode}")
             except Exception as e:
                 logger.error(f"שגיאה בפתיחת התמונה: {e}")
@@ -455,7 +480,6 @@ class ReadLaterBot:
                     logger.info("התמונה הומרה לגוונים של אפור")
                 
                 # שיפור הניגודיות
-                from PIL import ImageEnhance
                 enhancer = ImageEnhance.Contrast(image)
                 image = enhancer.enhance(1.5)  # הגדלת ניגודיות
                 logger.info("ניגודיות התמונה שופרה")
@@ -470,7 +494,7 @@ class ReadLaterBot:
                 
                 # בדיקה ש-Tesseract זמין
                 try:
-                    tesseract_version = pytesseract.get_tesseract_version()
+                    tesseract_version = tesseract_local.get_tesseract_version()
                     logger.info(f"Tesseract version: {tesseract_version}")
                 except Exception as e:
                     logger.error(f"Tesseract לא זמין: {e}")
@@ -481,7 +505,7 @@ class ReadLaterBot:
                 
                 # תחילה ננסה עברית
                 try:
-                    hebrew_text = pytesseract.image_to_string(image, lang='heb', config='--psm 6')
+                    hebrew_text = tesseract_local.image_to_string(image, lang='heb', config='--psm 6')
                     logger.info(f"טקסט עברי זוהה: {len(hebrew_text)} תווים")
                 except Exception as e:
                     logger.error(f"שגיאה בזיהוי עברית: {e}")
@@ -489,7 +513,7 @@ class ReadLaterBot:
                 
                 # אם לא מצאנו הרבה עברית, ננסה אנגלית
                 try:
-                    english_text = pytesseract.image_to_string(image, lang='eng', config='--psm 6')
+                    english_text = tesseract_local.image_to_string(image, lang='eng', config='--psm 6')
                     logger.info(f"טקסט אנגלי זוהה: {len(english_text)} תווים")
                 except Exception as e:
                     logger.error(f"שגיאה בזיהוי אנגלית: {e}")
@@ -1000,6 +1024,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     error_msg = f"❌ <b>תמונה לא תקינה</b>\n\n"
                     error_msg += f"פרטי השגיאה: {error_message}\n\n"
                     error_msg += f"💡 וודא שאתה שולח תמונה תקינה (JPG/PNG)"
+                elif error_type == 'libraries_unavailable':
+                    error_msg = f"❌ <b>ספריות OCR לא זמינות</b>\n\n"
+                    error_msg += f"פרטי השגיאה: {error_message}\n\n"
+                    error_msg += f"שגיאה טכנית במערכת. צור קשר עם המפתח."
+                elif error_type == 'import_failed':
+                    error_msg = f"❌ <b>שגיאה בטעינת ספריות OCR</b>\n\n"
+                    error_msg += f"פרטי השגיאה: {error_message}\n\n"
+                    error_msg += f"שגיאה טכנית במערכת. צור קשר עם המפתח."
                 elif error_type == 'tesseract_unavailable':
                     error_msg = f"❌ <b>מנוע זיהוי הטקסט לא זמין</b>\n\n"
                     error_msg += f"שגיאה טכנית במערכת. צור קשר עם המפתח."
