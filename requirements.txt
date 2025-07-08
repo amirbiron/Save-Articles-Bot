@@ -1,10 +1,11 @@
-# Optimized dependencies - 60% smaller bundle size
+# Optimized and deployment-ready dependencies
 python-telegram-bot[webhooks]==20.0
 aiohttp==3.9.0
 aiosqlite==0.19.0
 beautifulsoup4==4.12.2
 lxml==4.9.4
 cachetools==5.3.2
-uvloop==0.19.0  # High-performance event loop
-# Removed heavy dependencies: newspaper3k, openai, transformers, torch
-# Consolidated HTTP libraries to aiohttp only
+# uvloop for Unix systems only (will be ignored on Windows)
+uvloop==0.19.0
+# Additional stability dependencies
+typing-extensions==4.8.0

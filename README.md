@@ -15,6 +15,9 @@
 
 ### התקנה מקומית:
 ```bash
+# בדיקת תקינות לפני התקנה
+python health_check.py
+
 # התקנת תלויות מיטביות
 pip install -r requirements.txt
 
@@ -32,6 +35,73 @@ export WEBHOOK_URL="your_webhook_url"
 python bot.py
 ```
 
+## 🚨 פתרון בעיות דיפלוי
+
+### ❌ **שגיאות נפוצות ופתרונות:**
+
+#### שגיאה: uvloop לא מותקן
+```
+ImportError: No module named 'uvloop'
+```
+**פתרון:** הבוט יעבוד גם בלי uvloop - זה רק אופטימיזציה. השגיאה תיעלם אוטומטית.
+
+#### שגיאה: lxml לא מותקן  
+```
+Error installing lxml
+```
+**פתרון:** 
+```bash
+# עבור Ubuntu/Debian
+sudo apt-get install libxml2-dev libxslt1-dev zlib1g-dev
+
+# אם עדיין לא עובד, הסר את lxml מ-requirements.txt
+# הבוט יעבוד עם html.parser במקום
+```
+
+#### שגיאה: טוקן לא תקין
+```
+telegram.error.InvalidToken
+```
+**פתרון:** 
+1. וודא שהטוקן נכון
+2. הגדר כמשתנה סביבה: `export TELEGRAM_TOKEN="your_token"`
+3. בדוק שאין רווחים בטוקן
+
+#### שגיאה: Webhook נכשל
+```
+Error setting webhook
+```
+**פתרון:**
+1. וודא שה-URL תקין ומתחיל ב-https
+2. הוסף `/webhook` לסוף ה-URL
+3. בדוק שהפורט 8080 זמין
+
+### 🔧 **בדיקת תקינות:**
+```bash
+# הרץ בדיקה לפני דיפלוי
+python health_check.py
+
+# אם הכל ירוק - אפשר לעשות deploy
+```
+
+### 🌐 **הגדרות פלטפורמה:**
+
+#### Render:
+- Service Type: `Web Service`
+- Build Command: `pip install -r requirements.txt`
+- Start Command: `python bot.py`
+- Environment Variables: `TELEGRAM_TOKEN`, `WEBHOOK_URL`
+
+#### Heroku:
+- Procfile: `web: python bot.py` (כבר קיים)
+- Config Vars: `TELEGRAM_TOKEN`, `WEBHOOK_URL`
+- Buildpack: `python`
+
+#### Railway:
+- Root Directory: `/` (ברירת מחדל)
+- Start Command: `python bot.py`
+- Variables: `TELEGRAM_TOKEN`, `WEBHOOK_URL`
+
 ## 🔧 אופטימיזציות מיושמות
 
 ### 1. **מסד נתונים מיטבי**
@@ -46,7 +116,7 @@ python bot.py
 - מטמון URLs למניעת עיבוד כפול
 
 ### 3. **הוצאת תוכן מיטבי**
-- פרסר lxml מהיר
+- פרסר lxml מהיר (עם fallback ל-html.parser)
 - Smart selectors לזיהוי תוכן
 - Retry logic עם exponential backoff
 - Connection pooling עם aiohttp
@@ -62,8 +132,7 @@ python bot.py
 ### פקודות מעקב:
 - `/stats` - סטטיסטיקות ביצועים בזמן אמת
 - `/saved` - רשימת כתבות עם עימוד
-- `/backup` - גיבוי מהיר של כתבות
-- `/tag [מספר] [קטגוריה]` - עדכון קטגוריות
+- `/help` - מדריך מלא
 
 ### מדדי ביצועים:
 - זמן תגובה ממוצע: ~1-2 שניות
@@ -93,8 +162,6 @@ python bot.py
 /help - מדריך שימוש
 /saved - הצגת כתבות שמורות
 /stats - סטטיסטיקות ביצועים
-/tag [מספר] [קטגוריה] - עדכון קטגוריה
-/backup - גיבוי כתבות
 ```
 
 ## 🏆 השגים
@@ -117,6 +184,14 @@ python bot.py
 - [ ] GraphQL API
 - [ ] Machine learning למיון חכם
 - [ ] Push notifications
+
+## 📞 תמיכה
+
+**אם הדיפלוי נכשל:**
+1. הרץ `python health_check.py`
+2. בדוק את השגיאות בלוגים
+3. וודא שכל משתני הסביבה מוגדרים
+4. קרא את `deploy-guide.md` למידע מפורט
 
 ---
 
