@@ -483,7 +483,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = """
 📖 איך להשתמש בבוט:
 
-🔸 <b>שליחת קישור:</b> פשוט שלח קישור לכתבה ואני אשמור אותה אוטומטית
+🔸 <b>שליחת קישור:</b> שלח קישור לכתבה (גם בתוך טקסט!) ואני אשמור אותה אוטומטית
 🔸 <b>הכתבות שלי:</b> לחץ על הכפתור כדי לראות את כל הכתבות השמורות
 🔸 <b>רשימת כתבות:</b> רשימה עם כפתורי צפייה ומחיקה לכל כתבה
 🔸 <b>חיפוש:</b> לחץ על הכפתור ואז כתוב מילות חיפוש ישירות
@@ -492,6 +492,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 📂 <b>קטגוריות אוטומטיות:</b>
 • טכנולוגיה • בריאות • כלכלה • פוליטיקה • השראה • כללי
+
+💡 <b>דוגמאות לשליחת קישורים:</b>
+• https://ynet.co.il/article/example (קישור נקי)
+• "תראה את הכתבה הזאת: https://kan.org.il/..." (בתוך טקסט)
+• כמה קישורים בהודעה אחת - אני אתן לך לבחור!
 
 ⚡ <b>פקודות מתקדמות (אופציונלי):</b>
 • /delete [מספר] - מחיקת כתבה לפי מספר
@@ -506,8 +511,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
+def extract_urls_from_text(text: str) -> List[str]:
+    """חילוץ קישורים מטקסט"""
+    # תבנית regex לזיהוי URLs
+    url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+    urls = re.findall(url_pattern, text)
+    return urls
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """טיפול בהודעות טקסט - כפתורים וחיפוש"""
+    """טיפול בהודעות טקסט - כפתורים, חיפוש וחילוץ קישורים"""
     text = update.message.text.strip()
     user_id = update.effective_user.id
     
@@ -592,19 +604,46 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(response, reply_markup=reply_markup, parse_mode='HTML')
         return
     
-    # בדיקה שזה קישור
-    if not re.match(r'https?://', text):
-        await update.message.reply_text(
-            "לא הבנתי... 🤔\n\n"
-            "אני יכול לעזור לך עם:\n"
-            "• שליחת קישור לכתבה לשמירה\n"
-            "• שימוש בכפתורים למטה\n"
-            "• כתיבת `/help` לעזרה מלאה"
-        )
+    # חיפוש קישורים בטקסט
+    urls = extract_urls_from_text(text)
+    
+    if urls:
+        # אם נמצא קישור אחד או יותר
+        if len(urls) == 1:
+            # קישור יחיד - עבד אותו מיד
+            url = urls[0]
+            await update.message.reply_text(f"🔗 זיהיתי קישור: {url}\n\n🔄 מעבד...")
+            await handle_url(url, update, context)
+        else:
+            # כמה קישורים - תן למשתמש לבחור
+            keyboard = []
+            for i, url in enumerate(urls[:5], 1):  # הצג עד 5 קישורים
+                # קצר את הקישור לתצוגה
+                display_url = url if len(url) <= 50 else url[:47] + "..."
+                keyboard.append([InlineKeyboardButton(f"{i}. {display_url}", callback_data=f"process_url_{i-1}")])
+            
+            # שמור את הקישורים בזיכרון זמני
+            user_states[user_id] = {"action": "choose_url", "urls": urls}
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(
+                f"🔗 <b>נמצאו {len(urls)} קישורים</b>\n\n"
+                f"איזה קישור תרצה לעבד?",
+                reply_markup=reply_markup,
+                parse_mode='HTML'
+            )
         return
     
-    # זה קישור - נעבד אותו
-    await handle_url(text, update, context)
+    # אם אין קישורים
+    await update.message.reply_text(
+        "לא הבנתי... 🤔\n\n"
+        "אני יכול לעזור לך עם:\n"
+        "• <b>שליחת קישור לכתבה</b> (גם בתוך טקסט!)\n"
+        "• שימוש בכפתורים למטה\n"
+        "• כתיבת `/help` לעזרה מלאה\n\n"
+        "💡 דוגמה: \"תראה את הכתבה הזאת https://ynet.co.il/...\"",
+        parse_mode='HTML'
+    )
 
 async def handle_url(url: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
     """טיפול בקישורים"""
@@ -785,7 +824,33 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = update.effective_user.id
     
-    if data.startswith("view_article_"):
+    if data.startswith("process_url_"):
+        # טיפול בבחירת קישור מתוך כמה קישורים
+        url_index = int(data.split("_")[2])
+        
+        # בדיקה שיש מצב שמור למשתמש
+        if user_id in user_states and user_states[user_id].get("action") == "choose_url":
+            urls = user_states[user_id].get("urls", [])
+            
+            if 0 <= url_index < len(urls):
+                selected_url = urls[url_index]
+                
+                # איפוס המצב
+                user_states[user_id] = None
+                
+                # עדכון ההודעה והעברה לעיבוד
+                await query.edit_message_text(f"🔗 <b>עיבוד הקישור:</b>\n{selected_url}\n\n🔄 מעבד...", parse_mode='HTML')
+                
+                # עיבוד הקישור הנבחר
+                await handle_url(selected_url, update, context)
+            else:
+                await query.edit_message_text("❌ שגיאה: קישור לא תקין")
+        else:
+            await query.edit_message_text("❌ שגיאה: הפעלה פגה, נסה שוב")
+        
+        return
+    
+    elif data.startswith("view_article_"):
         article_id = int(data.split("_")[2])
         
         # טעינת פרטי הכתבה מהמסד נתונים
