@@ -292,10 +292,13 @@ class ReadLaterBot:
         else:  # text format
             text = "הכתבות השמורות שלי:\n\n"
             for article in articles:
+                # חילוץ תאריך בלי שעה
+                date_only = article.date_saved.split(' ')[0]  # לוקח רק החלק לפני הרווח
+                
                 text += f"📰 {article.title}\n"
                 text += f"🔗 {article.url}\n"
                 text += f"📂 {article.category}\n"
-                text += f"📅 {article.date_saved}\n"
+                text += f"📅 {date_only}\n"
                 text += f"📝 {article.summary}\n\n"
                 text += "─" * 50 + "\n\n"
             
