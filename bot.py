@@ -18,8 +18,10 @@ try:
     from newspaper import Article
     import openai
     from transformers import pipeline
+    import pytesseract
+    from PIL import Image
 except ImportError:
-    print("נדרשות ספריות נוספות: pip install newspaper3k openai transformers torch")
+    print("נדרשות ספריות נוספות: pip install newspaper3k openai transformers torch pytesseract Pillow")
 
 # הגדרות
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -410,6 +412,83 @@ class ReadLaterBot:
         
         return 'כללי'
     
+    def extract_text_from_image(self, image_path: str) -> Dict:
+        """חילוץ טקסט מתמונה באמצעות OCR"""
+        try:
+            # פתיחת התמונה
+            image = Image.open(image_path)
+            
+            # שיפור איכות התמונה לOCR טוב יותר
+            # המרה לגוונים של אפור
+            if image.mode != 'L':
+                image = image.convert('L')
+            
+            # ניסיון חילוץ טקסט בעברית ואנגלית
+            try:
+                # תחילה ננסה עברית
+                hebrew_text = pytesseract.image_to_string(image, lang='heb')
+                
+                # אם לא מצאנו הרבה עברית, ננסה אנגלית
+                english_text = pytesseract.image_to_string(image, lang='eng')
+                
+                # בחירת הטקסט הטוב יותר (יותר תווים = יותר טוב)
+                if len(hebrew_text.strip()) > len(english_text.strip()):
+                    extracted_text = hebrew_text
+                    detected_lang = 'hebrew'
+                else:
+                    extracted_text = english_text
+                    detected_lang = 'english'
+                
+                # ניקוי הטקסט
+                extracted_text = extracted_text.strip()
+                
+                # הסרת תווים לא רלוונטיים ושורות ריקות
+                lines = extracted_text.split('\n')
+                clean_lines = []
+                
+                for line in lines:
+                    line = line.strip()
+                    if len(line) > 5:  # רק שורות עם תוכן משמעותי
+                        clean_lines.append(line)
+                
+                final_text = '\n'.join(clean_lines)
+                
+                if len(final_text) < 30:
+                    return {
+                        'error': 'insufficient_text',
+                        'message': 'לא נמצא מספיק טקסט בתמונה. אנא וודא שהתמונה ברורה וכוללת טקסט קריא.'
+                    }
+                
+                # חיפוש כותרת - השורה הראשונה הארוכה ביותר
+                lines = final_text.split('\n')
+                title = lines[0] if lines else 'כותרת מתמונה'
+                
+                # אם השורה הראשונה קצרה מדי, נחפש שורה ארוכה יותר
+                for line in lines[:3]:  # בדוק את 3 השורות הראשונות
+                    if len(line) > len(title):
+                        title = line
+                
+                return {
+                    'title': title[:200],  # הגבל אורך כותרת
+                    'text': final_text,
+                    'detected_language': detected_lang,
+                    'confidence': 'high' if len(final_text) > 100 else 'medium'
+                }
+                
+            except Exception as e:
+                logger.error(f"שגיאה בחילוץ טקסט מתמונה: {e}")
+                return {
+                    'error': 'ocr_failed',
+                    'message': f'שגיאה בזיהוי הטקסט: {str(e)}'
+                }
+                
+        except Exception as e:
+            logger.error(f"שגיאה בטעינת התמונה: {e}")
+            return {
+                'error': 'image_load_failed',
+                'message': 'שגיאה בטעינת התמונה. אנא וודא שהתמונה תקינה.'
+            }
+
     def extract_keywords(self, title: str, text: str, max_keywords: int = 8) -> str:
         """חילוץ מילות מפתח עיקריות מהטקסט"""
         try:
@@ -632,6 +711,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📖 איך להשתמש בבוט:
 
 🔸 <b>שליחת קישור:</b> שלח קישור לכתבה (גם בתוך טקסט!) ואני אשמור אותה אוטומטית
+🔸 <b>צילום מסך:</b> שלח צילום מסך של כתבה ואני אחלץ את הטקסט (OCR)
 🔸 <b>הכתבות שלי:</b> לחץ על הכפתור כדי לראות את כל הכתבות השמורות
 🔸 <b>רשימת כתבות:</b> רשימה עם כפתורי צפייה ומחיקה לכל כתבה
 🔸 <b>חיפוש:</b> לחץ על הכפתור ואז כתוב מילות חיפוש ישירות
@@ -645,6 +725,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • https://ynet.co.il/article/example (קישור נקי)
 • "תראה את הכתבה הזאת: https://kan.org.il/..." (בתוך טקסט)
 • כמה קישורים בהודעה אחת - אני אתן לך לבחור!
+
+📸 <b>טיפים לצילום מסך טוב:</b>
+• צלם ישר ולא בזווית
+• ודא שהטקסט ברור וקריא
+• השתמש בתאורה טובה
+• תמיכה בעברית ואנגלית
+• הבוט יזהה אוטומטית את השפה
 
 ⚡ <b>פקודות מתקדמות (אופציונלי):</b>
 • /delete [מספר] - מחיקת כתבה לפי מספר
@@ -787,11 +874,136 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "לא הבנתי... 🤔\n\n"
         "אני יכול לעזור לך עם:\n"
         "• <b>שליחת קישור לכתבה</b> (גם בתוך טקסט!)\n"
+        "• <b>צילום מסך של כתבה</b> (זיהוי טקסט אוטומטי)\n"
         "• שימוש בכפתורים למטה\n"
         "• כתיבת `/help` לעזרה מלאה\n\n"
-        "💡 דוגמה: \"תראה את הכתבה הזאת https://ynet.co.il/...\"",
+        "💡 דוגמאות: \n"
+        "• \"תראה את הכתבה הזאת https://ynet.co.il/...\"\n"
+        "• שלח תמונה של כתבה מהעיתון או מהמסך",
         parse_mode='HTML'
     )
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """טיפול בתמונות - חילוץ טקסט באמצעות OCR"""
+    user_id = update.effective_user.id
+    
+    # הודעת טעינה
+    loading_message = await update.message.reply_text("🖼️ מעבד את התמונה...")
+    
+    try:
+        # קבלת התמונה הגדולה ביותר
+        photo = update.message.photo[-1]
+        
+        # יצירת שם קובץ זמני
+        import tempfile
+        import os
+        temp_dir = tempfile.mkdtemp()
+        temp_file_path = os.path.join(temp_dir, f"image_{user_id}_{photo.file_id}.jpg")
+        
+        try:
+            # הורדת התמונה
+            await loading_message.edit_text("📥 מוריד את התמונה...")
+            file = await context.bot.get_file(photo.file_id)
+            await file.download_to_drive(temp_file_path)
+            
+            # חילוץ טקסט מהתמונה
+            await loading_message.edit_text("🔍 מזהה טקסט בתמונה...")
+            ocr_result = bot.extract_text_from_image(temp_file_path)
+            
+            if 'error' in ocr_result:
+                error_msg = f"❌ {ocr_result['message']}\n\n💡 טיפים לתמונה טובה יותר:\n"
+                error_msg += "• ודא שהטקסט ברור וקריא\n"
+                error_msg += "• צלם ישר ולא בזווית\n"
+                error_msg += "• השתמש בתאורה טובה\n"
+                error_msg += "• הגדל את כתב היד אם זה כתב יד"
+                
+                await loading_message.edit_text(error_msg)
+                return
+            
+            # עיבוד הטקסט שחולץ
+            await loading_message.edit_text("🤖 מכין סיכום...")
+            
+            title = ocr_result['title']
+            extracted_text = ocr_result['text']
+            detected_lang = ocr_result['detected_language']
+            confidence = ocr_result['confidence']
+            
+            # יצירת סיכום
+            summary = bot.summarize_text(extracted_text)
+            
+            # זיהוי קטגוריה
+            category = bot.detect_category(title, extracted_text)
+            
+            # שמירה במסד נתונים (ללא URL אמיתי)
+            fake_url = f"image_upload_{user_id}_{photo.file_id}"
+            
+            article_id = bot.save_article(
+                user_id=user_id,
+                url=fake_url,
+                title=title,
+                summary=summary,
+                full_text=extracted_text,
+                category=category
+            )
+            
+            # הכנת תגובה עם כפתורים
+            keyboard = [
+                [
+                    InlineKeyboardButton("📂 שנה קטגוריה", callback_data=f"change_category_{article_id}"),
+                    InlineKeyboardButton("🔍 הצג מלא", callback_data=f"show_full_{article_id}")
+                ],
+                [
+                    InlineKeyboardButton("✏️ ערוך", callback_data=f"edit_{article_id}"),
+                    InlineKeyboardButton("🗑️ מחק", callback_data=f"delete_{article_id}")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # סמלים לפי שפה שזוהתה
+            lang_emoji = "🇮🇱" if detected_lang == "hebrew" else "🇺🇸"
+            confidence_emoji = "✅" if confidence == "high" else "⚠️"
+            
+            response_text = f"""
+📸 <b>תמונה נשמרה בהצלחה!</b>
+
+{lang_emoji} <b>שפה מזוהה</b>: {detected_lang}
+{confidence_emoji} <b>רמת זיהוי</b>: {confidence}
+
+📰 <b>כותרת</b>: {title}
+📂 <b>קטגוריה</b>: {category}
+
+📝 <b>סיכום</b>:
+{summary}
+
+💡 <i>ניתן לערוך את התוכן או לשנות קטגוריה</i>
+"""
+            
+            await loading_message.edit_text(response_text, reply_markup=reply_markup, parse_mode='HTML')
+            
+            # שליחת הודעה נוספת עם המקלדת הקבועה
+            await update.message.reply_text(
+                "📸 <b>התמונה עובדה בהצלחה!</b>\n\nמה תרצה לעשות עכשיו?",
+                reply_markup=get_main_keyboard(),
+                parse_mode='HTML'
+            )
+            
+        finally:
+            # ניקוי - מחיקת הקובץ הזמני
+            try:
+                if os.path.exists(temp_file_path):
+                    os.remove(temp_file_path)
+                os.rmdir(temp_dir)
+            except Exception as cleanup_error:
+                logger.error(f"שגיאה בניקוי קבצים זמניים: {cleanup_error}")
+                
+    except Exception as e:
+        logger.error(f"שגיאה בעיבוד תמונה: {e}")
+        await loading_message.edit_text(
+            f"❌ <b>שגיאה בעיבוד התמונה</b>\n\n"
+            f"פרטי השגיאה: {str(e)}\n\n"
+            f"💡 נסה שוב עם תמונה אחרת או בדוק שהתמונה תקינה.",
+            parse_mode='HTML'
+        )
 
 async def handle_url(url: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
     """טיפול בקישורים"""
@@ -1796,6 +2008,9 @@ def main():
     
     # טיפול בהודעות טקסט - כפתורים, חיפוש וקישורים
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    # טיפול בתמונות - חילוץ טקסט באמצעות OCR
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
     # טיפול בכפתורים
     application.add_handler(CallbackQueryHandler(button_callback))
