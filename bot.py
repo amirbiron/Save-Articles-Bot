@@ -917,11 +917,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # הצגת עד 6 כתבות עם כפתורי צפייה ומחיקה
         displayed_articles = articles[:6]
         
-        for article in displayed_articles:
+        for i, article in enumerate(displayed_articles, 1):
             title = f"{article.title[:30]}{'...' if len(article.title) > 30 else ''}"
             keyboard.append([
                 InlineKeyboardButton(title, callback_data=f"view_article_list_{article.id}"),
-                InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
+                InlineKeyboardButton(f"🗑️ {i}", callback_data=f"delete_{article.id}")
             ])
         
         # אם יש יותר מ-6 כתבות
@@ -987,11 +987,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # הצגת עד 6 כתבות עם כפתורי צפייה ומחיקה
         displayed_articles = articles[:6]
         
-        for article in displayed_articles:
+        for i, article in enumerate(displayed_articles, 1):
             title = f"{article.title[:30]}{'...' if len(article.title) > 30 else ''}"
             keyboard.append([
                 InlineKeyboardButton(title, callback_data=f"view_article_list_{article.id}"),
-                InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
+                InlineKeyboardButton(f"🗑️ {i}", callback_data=f"delete_{article.id}")
             ])
         
         # אם יש יותר מ-6 כתבות
@@ -1075,11 +1075,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = []
         
         # הצגת כל הכתבות
-        for article in articles:
+        for i, article in enumerate(articles, 1):
             title = f"{article.title[:30]}{'...' if len(article.title) > 30 else ''}"
             keyboard.append([
                 InlineKeyboardButton(title, callback_data=f"view_article_list_{article.id}"),
-                InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
+                InlineKeyboardButton(f"🗑️ {i}", callback_data=f"delete_{article.id}")
             ])
         
         # כפתורי ניווט
@@ -1413,11 +1413,11 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # הצגת עד 6 כתבות עם כפתורי צפייה ומחיקה
     displayed_articles = articles[:6]
     
-    for article in displayed_articles:
+    for i, article in enumerate(displayed_articles, 1):
         title = f"{article.title[:30]}{'...' if len(article.title) > 30 else ''}"
         keyboard.append([
             InlineKeyboardButton(title, callback_data=f"view_article_list_{article.id}"),
-            InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
+            InlineKeyboardButton(f"🗑️ {i}", callback_data=f"delete_{article.id}")
         ])
     
     # אם יש יותר מ-6 כתבות
@@ -1469,7 +1469,8 @@ async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_document(
                 document=f,
                 filename=display_filename,
-                caption=f"💾 **גיבוי הכתבות שלך** ({format_desc})\n\n📚 {len(articles)} כתבות\n📅 {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n💡 לגיבוי JSON טכני השתמש: `/backup json`"
+                caption=f"💾 **גיבוי הכתבות שלך** ({format_desc})\n\n📚 {len(articles)} כתבות\n📅 {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n💡 לגיבוי JSON טכני השתמש: `/backup json`",
+                parse_mode='Markdown'
             )
         
         # מחיקת הקובץ הזמני
