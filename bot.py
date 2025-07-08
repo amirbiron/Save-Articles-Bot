@@ -2,6 +2,7 @@ import logging
 import sqlite3
 import json
 import re
+import os
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
@@ -619,7 +620,38 @@ async def tag_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ שגיאה: {str(e)}")
 
-import os
+async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """פקודת גיבוי"""
+    user_id = update.effective_user.id
+    articles = bot.get_user_articles(user_id)
+    
+    if not articles:
+        await update.message.reply_text("אין לך כתבות שמורות לגיבוי. שלח לי קישור כדי להתחיל! 📚")
+        return
+    
+    # יצירת גיבוי
+    backup_data = bot.export_articles(user_id, 'json')
+    
+    # שמירת הקובץ
+    filename = f"backup_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    
+    try:
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(backup_data)
+        
+        # שליחת הקובץ למשתמש
+        with open(filename, 'rb') as f:
+            await update.message.reply_document(
+                document=f,
+                filename=f"כתבות_שמורות_{datetime.now().strftime('%Y-%m-%d')}.json",
+                caption=f"💾 **גיבוי הכתבות שלך**\n\n📚 {len(articles)} כתבות\n📅 {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+            )
+        
+        # מחיקת הקובץ הזמני
+        os.remove(filename)
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ שגיאה ביצירת הגיבוי: {str(e)}")
 
 def main():
     """הפעלת הבוט"""
@@ -630,6 +662,7 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("save", save_command))  # הוספת פקודת save
     application.add_handler(CommandHandler("saved", saved_articles))
+    application.add_handler(CommandHandler("backup", backup_command))  # הוספת פקודת backup
     application.add_handler(CommandHandler("tag", tag_command))
     
     # טיפול בקישורים
