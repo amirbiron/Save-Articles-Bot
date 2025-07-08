@@ -523,6 +523,53 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(response_text, reply_markup=reply_markup, parse_mode='Markdown')
         else:
             await query.edit_message_text("❌ לא נמצאה כתבה זו")
+            
+    elif data.startswith("view_article_list_"):
+        article_id = int(data.split("_")[3])
+        
+        # טעינת פרטי הכתבה מהמסד נתונים
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM articles WHERE id = ? AND user_id = ?', (article_id, user_id))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            # המרה לאובייקט SavedArticle
+            article = SavedArticle(
+                id=row[0], url=row[2], title=row[3], summary=row[4], 
+                full_text=row[5], category=row[6], tags=row[7], 
+                date_saved=row[8], user_id=row[1]
+            )
+            
+            # הכנת הכפתורים
+            keyboard = [
+                [
+                    InlineKeyboardButton("📂 שנה קטגוריה", callback_data=f"change_category_{article_id}"),
+                    InlineKeyboardButton("🔍 הצג מלא", callback_data=f"show_full_{article_id}")
+                ],
+                [
+                    InlineKeyboardButton("🗑️ מחק", callback_data=f"delete_{article_id}"),
+                    InlineKeyboardButton("↩️ חזור לרשימה", callback_data="back_to_list")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # הצגת המידע על הכתבה
+            response_text = f"""
+📰 **{article.title}**
+
+📂 **קטגוריה**: {article.category}
+📅 **נשמר**: {article.date_saved.split(' ')[0]}
+📝 **סיכום**:
+{article.summary}
+
+🔗 **קישור**: {article.url}
+"""
+            
+            await query.edit_message_text(response_text, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await query.edit_message_text("❌ לא נמצאה כתבה זו")
     
     elif data.startswith("show_full_"):
         article_id = int(data.split("_")[2])
@@ -647,7 +694,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for article in displayed_articles:
             title = f"{article.title[:25]}{'...' if len(article.title) > 25 else ''}"
             keyboard.append([
-                InlineKeyboardButton(f"👁️ {title}", callback_data=f"view_article_{article.id}"),
+                InlineKeyboardButton(f"👁️ {title}", callback_data=f"view_article_list_{article.id}"),
                 InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
             ])
         
@@ -668,7 +715,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ המחיקה בוטלה")
         
     elif data == "back_to_saved":
-        # חזרה לרשימת הכתבות השמורות
+        # חזרה לרשימת הכתבות השמורות (/saved)
         articles = bot.get_user_articles(user_id)
         
         response = f"📚 **הכתבות השמורות שלך** ({len(articles)} כתבות)\n\n"
@@ -690,6 +737,39 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard.append([
             InlineKeyboardButton("📊 סטטיסטיקות", callback_data="stats"),
             InlineKeyboardButton("💾 גיבוי", callback_data="backup")
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(response, reply_markup=reply_markup, parse_mode='Markdown')
+        
+    elif data == "back_to_list":
+        # חזרה לרשימת הכתבות (/list)
+        articles = bot.get_user_articles(user_id)
+        
+        response = f"📋 **רשימת הכתבות שלך** ({len(articles)} כתבות)\n\n"
+        response += "בחר כתבה לצפייה או מחיקה:"
+        
+        # יצירת כפתורים לכתבות עם צפייה ומחיקה לכל כתבה
+        keyboard = []
+        
+        # הצגת עד 6 כתבות עם כפתורי צפייה ומחיקה
+        displayed_articles = articles[:6]
+        
+        for article in displayed_articles:
+            title = f"{article.title[:25]}{'...' if len(article.title) > 25 else ''}"
+            keyboard.append([
+                InlineKeyboardButton(f"👁️ {title}", callback_data=f"view_article_list_{article.id}"),
+                InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
+            ])
+        
+        # אם יש יותר מ-6 כתבות
+        if len(articles) > 6:
+            keyboard.append([InlineKeyboardButton(f"📋 הצג עוד {len(articles) - 6} כתבות", callback_data="show_more_list")])
+        
+        # כפתורי ניווט
+        keyboard.append([
+            InlineKeyboardButton("📚 תצוגת קטגוריות", callback_data="show_categories"),
+            InlineKeyboardButton("📊 סטטיסטיקות", callback_data="stats")
         ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -739,7 +819,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 response += f"   ... ועוד {len(cat_articles) - 3} כתבות\n"
             response += "\n"
         
-        keyboard = [[InlineKeyboardButton("↩️ חזור לרשימה", callback_data="back_to_saved")]]
+        keyboard = [[InlineKeyboardButton("↩️ חזור לרשימה", callback_data="back_to_list")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(response, reply_markup=reply_markup, parse_mode='Markdown')
@@ -757,7 +837,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for article in articles:
             title = f"{article.title[:25]}{'...' if len(article.title) > 25 else ''}"
             keyboard.append([
-                InlineKeyboardButton(f"👁️ {title}", callback_data=f"view_article_{article.id}"),
+                InlineKeyboardButton(f"👁️ {title}", callback_data=f"view_article_list_{article.id}"),
                 InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
             ])
         
@@ -1001,7 +1081,7 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for article in displayed_articles:
         title = f"{article.title[:25]}{'...' if len(article.title) > 25 else ''}"
         keyboard.append([
-            InlineKeyboardButton(f"👁️ {title}", callback_data=f"view_article_{article.id}"),
+            InlineKeyboardButton(f"👁️ {title}", callback_data=f"view_article_list_{article.id}"),
             InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
         ])
     
