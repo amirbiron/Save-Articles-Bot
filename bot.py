@@ -86,12 +86,24 @@ class ReadLaterBot:
         conn.close()
     
     def extract_article_content(self, url: str) -> Optional[Dict]:
-        """הוצאת תוכן מכתבה באמצעות Newspaper3k"""
+        """הוצאת תוכן מכתבה באמצעות Newspaper3k עם תמיכה משופרת"""
         try:
-            # נסה עם User-Agent כדי לא להיחסם
+            # רשימת אתרים שחוסמים בוטים
+            blocked_domains = ['calcalist.co.il', 'globes.co.il', 'maariv.co.il']
+            
+            # בדיקה אם זה אתר חסום
+            for domain in blocked_domains:
+                if domain in url:
+                    return {
+                        'error': f'blocked_domain:{domain}',
+                        'url': url,
+                        'message': f'האתר {domain} חוסם בוטים. נסה קישור מאתר אחר כמו ynet.co.il, kan.org.il, או israel-today.co.il'
+                    }
+            
+            # ניסיון עם Newspaper3k עם User-Agent משופר
             article = Article(url, language='he')
-            article.config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            article.config.request_timeout = 10
+            article.config.browser_user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            article.config.request_timeout = 15
             
             article.download()
             article.parse()
@@ -99,13 +111,13 @@ class ReadLaterBot:
             # אם לא מצאנו תוכן בעברית, ננסה באנגלית
             if not article.text.strip():
                 article = Article(url, language='en')
-                article.config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                article.config.browser_user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 article.download()
                 article.parse()
             
             if not article.text.strip():
                 logger.error(f"No content found for URL: {url}")
-                return None
+                return {'error': 'no_content', 'url': url}
                 
             return {
                 'title': article.title or 'כותרת לא זמינה',
@@ -120,54 +132,91 @@ class ReadLaterBot:
             return {'error': str(e), 'url': url}
     
     def extract_content_fallback(self, url: str) -> Optional[Dict]:
-        """שיטה חלופית להוצאת תוכן"""
+        """שיטה חלופית להוצאת תוכן עם headers משופרים"""
         try:
             import requests
             from bs4 import BeautifulSoup
+            import time
             
+            # headers מתקדמים יותר כדי להימנע מחסימה
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Referer': 'https://www.google.com/',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'cross-site'
             }
             
-            response = requests.get(url, headers=headers, timeout=10)
+            # עיכוב קצר כדי להיראות אנושי
+            time.sleep(0.5)
+            
+            session = requests.Session()
+            response = session.get(url, headers=headers, timeout=15)
             response.raise_for_status()
             
             soup = BeautifulSoup(response.content, 'html.parser')
             
-            # חפש כותרת
+            # חפש כותרת - חיפוש מתקדם יותר
             title = None
-            for selector in ['h1', 'title', '.headline', '.title']:
+            title_selectors = [
+                'h1.headline', 'h1.title', 'h1.article-title', 
+                '.headline h1', '.title h1', '.article-header h1',
+                'h1', 'title', '.headline', '.title'
+            ]
+            
+            for selector in title_selectors:
                 title_elem = soup.select_one(selector)
                 if title_elem and title_elem.get_text().strip():
                     title = title_elem.get_text().strip()
                     break
             
-            # חפש תוכן
+            # חפש תוכן - חיפוש מתקדם יותר
             text = ""
-            for selector in ['article', '.content', '.article-body', 'main', '.post-content']:
+            content_selectors = [
+                'article .content', 'article .article-body', 'article .text',
+                '.article-content', '.article-body', '.post-content', 
+                '.entry-content', '.content-body', '.story-body',
+                'article', '.content', 'main', '.post'
+            ]
+            
+            for selector in content_selectors:
                 content_elem = soup.select_one(selector)
                 if content_elem:
+                    # הסר scripts ו-styles
+                    for script in content_elem(["script", "style", "nav", "header", "footer", "aside"]):
+                        script.decompose()
                     text = content_elem.get_text().strip()
-                    break
+                    if len(text) > 100:  # ודא שיש תוכן משמעותי
+                        break
             
             if not text:
                 # אם לא מצאנו, קח את כל הפסקאות
                 paragraphs = soup.find_all('p')
-                text = '\n'.join([p.get_text().strip() for p in paragraphs if p.get_text().strip()])
+                text = '\n'.join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 20])
             
             if title and text:
                 return {
                     'title': title[:200],  # הגבל אורך כותרת
-                    'text': text[:5000],   # הגבל אורך טקסט
+                    'text': text[:8000],   # הגבל אורך טקסט (יותר מקודם)
                     'authors': [],
                     'publish_date': None
                 }
             
-            return None
+            return {'error': 'no_content_found', 'url': url}
             
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 403:
+                return {'error': 'access_denied', 'url': url, 'status_code': 403}
+            return {'error': f'http_error_{e.response.status_code}', 'url': url}
         except Exception as e:
             logger.error(f"Fallback extraction failed for {url}: {str(e)}")
-            return None
+            return {'error': str(e), 'url': url}
     
     def summarize_text(self, text: str, max_length: int = 150) -> str:
         """סיכום טקסט באמצעות AI"""
@@ -569,6 +618,21 @@ async def handle_url(url: str, update: Update, context: ContextTypes.DEFAULT_TYP
     
     # אם יש שגיאה, נציג אותה
     if article_data and 'error' in article_data:
+        # בדיקה אם זה אתר חסום
+        if article_data['error'].startswith('blocked_domain:'):
+            domain = article_data['error'].split(':')[1]
+            blocked_msg = f"🚫 <b>האתר {domain} חוסם בוטים</b>\n\n"
+            blocked_msg += f"📰 אתרים שעובדים היטב עם הבוט:\n"
+            blocked_msg += f"✅ ynet.co.il\n"
+            blocked_msg += f"✅ kan.org.il\n"
+            blocked_msg += f"✅ israel-today.co.il\n"
+            blocked_msg += f"✅ haaretz.co.il\n"
+            blocked_msg += f"✅ news.walla.co.il\n\n"
+            blocked_msg += f"💡 נסה לחפש את הכתבה באחד מהאתרים הללו"
+            
+            await loading_message.edit_text(blocked_msg, parse_mode='HTML')
+            return
+        
         error_msg = f"❌ שגיאה בטעינת הכתבה:\n{article_data['error']}\n\nננסה שיטה אחרת..."
         await loading_message.edit_text(error_msg)
         
@@ -576,18 +640,42 @@ async def handle_url(url: str, update: Update, context: ContextTypes.DEFAULT_TYP
         article_data = bot.extract_content_fallback(url)
     
     if not article_data or 'error' in article_data:
-        error_details = ""
+        # הודעות שגיאה מותאמות
         if article_data and 'error' in article_data:
-            error_details = f"\n\nפרטי השגיאה: {article_data['error']}"
+            error = article_data['error']
+            
+            if error == 'access_denied' or error.startswith('http_error_403'):
+                error_msg = f"🚫 <b>גישה נדחתה</b>\n\n"
+                error_msg += f"האתר חוסם בוטים או דורש התחברות.\n\n"
+                error_msg += f"📰 <b>אתרים מומלצים:</b>\n"
+                error_msg += f"✅ ynet.co.il\n✅ kan.org.il\n✅ israel-today.co.il\n"
+                error_msg += f"✅ haaretz.co.il\n✅ news.walla.co.il"
+                
+                await loading_message.edit_text(error_msg, parse_mode='HTML')
+                return
+            
+            elif error == 'no_content' or error == 'no_content_found':
+                error_msg = f"📄 <b>לא נמצא תוכן</b>\n\n"
+                error_msg += f"לא הצלחתי לחלץ תוכן מהקישור הזה.\n\n"
+                error_msg += f"💡 <b>נסה:</b>\n"
+                error_msg += f"• לוודא שהקישור מוביל ישירות לכתבה\n"
+                error_msg += f"• לנסות קישור מאתר אחר\n"
+                error_msg += f"• לבדוק שהכתבה לא מחייבת מנוי"
+                
+                await loading_message.edit_text(error_msg, parse_mode='HTML')
+                return
         
+        # הודעת שגיאה כללית
         await loading_message.edit_text(
-            f"❌ מצטער, לא הצלחתי לטעון את הכתבה הזו.\n\n"
-            f"🔗 קישור: {url}\n"
-            f"💡 נסה:\n"
+            f"❌ <b>לא הצלחתי לטעון את הכתבה</b>\n\n"
+            f"🔗 קישור: {url}\n\n"
+            f"💡 <b>נסה:</b>\n"
             f"• לבדוק שהקישור תקין\n"
             f"• לנסות כתבה מאתר אחר\n"
-            f"• לשלוח קישור ישיר לכתבה (לא לעמוד הבית)"
-            f"{error_details}"
+            f"• לשלוח קישור ישיר לכתבה\n\n"
+            f"📰 <b>אתרים מומלצים:</b>\n"
+            f"ynet.co.il, kan.org.il, israel-today.co.il",
+            parse_mode='HTML'
         )
         return
     
@@ -623,29 +711,29 @@ async def handle_url(url: str, update: Update, context: ContextTypes.DEFAULT_TYP
     # הצגת מידע על הכתבה
     article_info = ""
     if article_data.get('authors'):
-        article_info += f"✍️ **כותב**: {', '.join(article_data['authors'])}\n"
+        article_info += f"✍️ <b>כותב</b>: {', '.join(article_data['authors'])}\n"
     if article_data.get('publish_date'):
-        article_info += f"📅 **תאריך**: {article_data['publish_date']}\n"
+        article_info += f"📅 <b>תאריך</b>: {article_data['publish_date']}\n"
     
     response_text = f"""
-✅ **הכתבה נשמרה בהצלחה!**
+✅ <b>הכתבה נשמרה בהצלחה!</b>
 
-📰 **כותרת**: {article_data['title']}
-📂 **קטגוריה**: {category}
+📰 <b>כותרת</b>: {article_data['title']}
+📂 <b>קטגוריה</b>: {category}
 {article_info}
-📝 **סיכום**:
+📝 <b>סיכום</b>:
 {summary}
 
-🔗 **קישור**: {url}
+🔗 <b>קישור</b>: {url}
 """
     
-    await loading_message.edit_text(response_text, reply_markup=reply_markup, parse_mode='Markdown')
+    await loading_message.edit_text(response_text, reply_markup=reply_markup, parse_mode='HTML')
     
     # שליחת הודעה נוספת עם המקלדת הקבועה
     await update.message.reply_text(
-        "💡 **מה תרצה לעשות עכשיו?**\n\nהשתמש בכפתורים למטה:",
+        "💡 <b>מה תרצה לעשות עכשיו?</b>\n\nהשתמש בכפתורים למטה:",
         reply_markup=get_main_keyboard(),
-        parse_mode='Markdown'
+        parse_mode='HTML'
     )
 
 async def saved_articles(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -661,7 +749,7 @@ async def saved_articles(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     # הצגת כתבות עם כפתורים
-    response = f"📚 **הכתבות השמורות שלך** ({len(articles)} כתבות)\n\n"
+    response = f"📚 <b>הכתבות השמורות שלך</b> ({len(articles)} כתבות)\n\n"
     response += "לחץ על כתבה לצפייה מלאה:"
     
     # יצירת כפתורים לכתבות
@@ -687,7 +775,7 @@ async def saved_articles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(response, reply_markup=reply_markup, parse_mode='Markdown')
+    await update.message.reply_text(response, reply_markup=reply_markup, parse_mode='HTML')
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """טיפול בלחיצות על כפתורים"""
