@@ -472,13 +472,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "🔍 חיפוש":
         user_states[user_id] = "searching"
         await update.message.reply_text(
-            "🔍 **מצב חיפוש פעיל**\n\n"
+            "🔍 <b>מצב חיפוש פעיל</b>\n\n"
             "כתוב עכשיו את מילות החיפוש שלך:\n"
             "• דוגמאות: טכנולוגיה AI\n"
             "• או: בריאות תזונה\n"
             "• או: פוליטיקה ממשלה\n\n"
             "💡 אני אחפש בכותרות, סיכומים ומילות מפתח",
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
         return
     elif text == "💾 גיבוי":
@@ -491,13 +491,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for article in articles:
             categories[article.category] = categories.get(article.category, 0) + 1
         
-        stats_text = f"📊 **הסטטיסטיקות שלך:**\n\n"
+        stats_text = f"📊 <b>הסטטיסטיקות שלך:</b>\n\n"
         stats_text += f"📚 סה\"כ כתבות: {len(articles)}\n\n"
         
         for category, count in sorted(categories.items(), key=lambda x: x[1], reverse=True):
             stats_text += f"📂 {category}: {count} כתבות\n"
         
-        await update.message.reply_text(stats_text, parse_mode='Markdown')
+        await update.message.reply_text(stats_text, parse_mode='HTML')
         return
     elif text == "❓ עזרה":
         await help_command(update, context)
@@ -512,13 +512,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if not found_articles:
             await update.message.reply_text(
-                f"🔍 לא נמצאו כתבות עבור: **{text}**\n\n💡 נסה מילים אחרות או בדוק איות",
-                parse_mode='Markdown'
+                f"🔍 לא נמצאו כתבות עבור: <b>{text}</b>\n\n💡 נסה מילים אחרות או בדוק איות",
+                parse_mode='HTML'
             )
             return
         
         # הצגת תוצאות החיפוש
-        response = f"🔍 **תוצאות חיפוש עבור: \"{text}\"**\n\n"
+        response = f"🔍 <b>תוצאות חיפוש עבור: \"{text}\"</b>\n\n"
         response += f"נמצאו {len(found_articles)} כתבות:\n\n"
         
         # יצירת כפתורים לכתבות שנמצאו
@@ -540,7 +540,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(response, reply_markup=reply_markup, parse_mode='Markdown')
+        await update.message.reply_text(response, reply_markup=reply_markup, parse_mode='HTML')
         return
     
     # בדיקה שזה קישור
