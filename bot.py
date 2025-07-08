@@ -474,8 +474,51 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if data.startswith("show_full_"):
         article_id = int(data.split("_")[2])
-        # הצגת טקסט מלא (מקוצר)
-        await query.edit_message_text("🔍 התכונה הזו בפיתוח...")
+        
+        # טעינת פרטי הכתבה מהמסד נתונים
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM articles WHERE id = ? AND user_id = ?', (article_id, user_id))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            # המרה לאובייקט SavedArticle
+            article = SavedArticle(
+                id=row[0], url=row[2], title=row[3], summary=row[4], 
+                full_text=row[5], category=row[6], tags=row[7], 
+                date_saved=row[8], user_id=row[1]
+            )
+            
+            # חיתוך הטקסט המלא למניעת חריגה ממגבלת טלגרם (4096 תווים)
+            max_length = 3500  # נשאיר מקום לכותרת ולכפתורים
+            full_text = article.full_text
+            
+            if len(full_text) > max_length:
+                full_text = full_text[:max_length] + "\n\n... [הטקסט חתוך - יותר מדי תווים]"
+            
+            # הכנת כפתור חזרה
+            keyboard = [
+                [InlineKeyboardButton("↩️ חזור לסיכום", callback_data=f"back_to_article_{article_id}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # הצגת הטקסט המלא
+            response_text = f"""
+🔍 **טקסט מלא של הכתבה:**
+
+📰 **{article.title}**
+📂 {article.category}
+
+📝 **תוכן מלא**:
+{full_text}
+
+🔗 **קישור**: {article.url}
+"""
+            
+            await query.edit_message_text(response_text, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await query.edit_message_text("❌ לא נמצאה כתבה זו")
         
     elif data.startswith("delete_"):
         article_id = int(data.split("_")[1])
@@ -541,7 +584,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ✅ **הקטגוריה עודכנה בהצלחה!**
 
 � **כותרת**: {article.title}
-�📂 **קטגוריה**: {article.category}
+�� **קטגוריה**: {article.category}
 📝 **סיכום**:
 {article.summary}
 
