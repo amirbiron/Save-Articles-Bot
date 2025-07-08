@@ -1,4 +1,4 @@
-THIS SHOULD BE A LINTER ERRORimport logging
+import logging
 import sqlite3
 import json
 import re
@@ -641,19 +641,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         keyboard = []
         
-            # הצגת עד 6 כתבות עם כפתורי צפייה ומחיקה
-    displayed_articles = articles[:6]
-    
-    for article in displayed_articles:
-        title = f"{article.title[:25]}{'...' if len(article.title) > 25 else ''}"
-        keyboard.append([
-            InlineKeyboardButton(f"👁️ {title}", callback_data=f"view_article_{article.id}"),
-            InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
-        ])
+        # הצגת עד 6 כתבות עם כפתורי צפייה ומחיקה
+        displayed_articles = articles[:6]
         
-        # אם יש יותר מ-8 כתבות
-        if len(articles) > 8:
-            keyboard.append([InlineKeyboardButton(f"📋 הצג עוד {len(articles) - 8} כתבות", callback_data="show_more_list")])
+        for article in displayed_articles:
+            title = f"{article.title[:25]}{'...' if len(article.title) > 25 else ''}"
+            keyboard.append([
+                InlineKeyboardButton(f"👁️ {title}", callback_data=f"view_article_{article.id}"),
+                InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
+            ])
+        
+        # אם יש יותר מ-6 כתבות
+        if len(articles) > 6:
+            keyboard.append([InlineKeyboardButton(f"📋 הצג עוד {len(articles) - 6} כתבות", callback_data="show_more_list")])
         
         # כפתורי ניווט
         keyboard.append([
@@ -992,33 +992,18 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response = f"📋 **רשימת הכתבות שלך** ({len(articles)} כתבות)\n\n"
     response += "בחר כתבה לצפייה או מחיקה:"
     
-    # יצירת כפתורים לכתבות עם אפשרויות צפייה ומחיקה
+    # יצירת כפתורים לכתבות עם צפייה ומחיקה לכל כתבה
     keyboard = []
     
-    # הצגת עד 8 כתבות (2 בכל שורה)
-    for i in range(0, min(len(articles), 8), 2):
-        row = []
-        
-        # כתבה ראשונה בשורה
-        article1 = articles[i]
-        title1 = f"{article1.title[:20]}{'...' if len(article1.title) > 20 else ''}"
-        row.append(InlineKeyboardButton(f"👁️ {title1}", callback_data=f"view_article_{article1.id}"))
-        
-        # כתבה שנייה בשורה (אם קיימת)
-        if i + 1 < len(articles):
-            article2 = articles[i + 1]
-            title2 = f"{article2.title[:20]}{'...' if len(article2.title) > 20 else ''}"
-            row.append(InlineKeyboardButton(f"👁️ {title2}", callback_data=f"view_article_{article2.id}"))
-        
-        keyboard.append(row)
+    # הצגת עד 6 כתבות עם כפתורי צפייה ומחיקה
+    displayed_articles = articles[:6]
     
-    # כפתורי מחיקה מהירה לכתבות ראשונות
-    if len(articles) >= 4:
-        delete_row = []
-        for i in range(min(4, len(articles))):
-            article = articles[i]
-            delete_row.append(InlineKeyboardButton(f"�️ {article.id}", callback_data=f"delete_{article.id}"))
-        keyboard.append(delete_row)
+    for article in displayed_articles:
+        title = f"{article.title[:25]}{'...' if len(article.title) > 25 else ''}"
+        keyboard.append([
+            InlineKeyboardButton(f"👁️ {title}", callback_data=f"view_article_{article.id}"),
+            InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
+        ])
     
     # אם יש יותר מ-6 כתבות
     if len(articles) > 6:
@@ -1026,8 +1011,8 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # כפתורי ניווט
     keyboard.append([
-        InlineKeyboardButton("� תצוגת קטגוריות", callback_data="show_categories"),
-        InlineKeyboardButton("� סטטיסטיקות", callback_data="stats")
+        InlineKeyboardButton("📚 תצוגת קטגוריות", callback_data="show_categories"),
+        InlineKeyboardButton("📊 סטטיסטיקות", callback_data="stats")
     ])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
