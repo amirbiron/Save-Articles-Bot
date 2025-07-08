@@ -39,6 +39,7 @@ class SavedArticle:
     full_text: str
     category: str
     tags: str
+    keywords: str
     date_saved: str
     user_id: int
 
@@ -66,9 +67,17 @@ class ReadLaterBot:
                 full_text TEXT NOT NULL,
                 category TEXT DEFAULT 'כללי',
                 tags TEXT DEFAULT '',
+                keywords TEXT DEFAULT '',
                 date_saved TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        
+        # הוספת עמודת מילות מפתח לכתבות קיימות
+        cursor.execute("PRAGMA table_info(articles)")
+        columns = [column[1] for column in cursor.fetchall()]
+        
+        if 'keywords' not in columns:
+            cursor.execute('ALTER TABLE articles ADD COLUMN keywords TEXT DEFAULT ""')
         
         conn.commit()
         conn.close()
@@ -201,16 +210,64 @@ class ReadLaterBot:
         
         return 'כללי'
     
+    def extract_keywords(self, title: str, text: str, max_keywords: int = 8) -> str:
+        """חילוץ מילות מפתח עיקריות מהטקסט"""
+        try:
+            import re
+            from collections import Counter
+            
+            # טקסט מלא לניתוח
+            full_text = f"{title} {text}".lower()
+            
+            # הסרת סימני פיסוק ומספרים
+            clean_text = re.sub(r'[^\u0590-\u05FF\w\s]', ' ', full_text)
+            
+            # חלוקה למילים
+            words = clean_text.split()
+            
+            # מילות עצירה בעברית ואנגלית
+            stop_words = {
+                'של', 'את', 'על', 'לא', 'זה', 'היא', 'הוא', 'זאת', 'כל', 'אל', 'עם', 'בין', 'גם',
+                'אך', 'או', 'כי', 'אם', 'מה', 'מי', 'איך', 'למה', 'מתי', 'איפה', 'הזה', 'הזאת',
+                'שלו', 'שלה', 'שלי', 'שלנו', 'שלהם', 'שלהן', 'אני', 'אתה', 'את', 'אנחנו', 'אתם',
+                'הם', 'הן', 'יש', 'אין', 'הייה', 'היו', 'יהיה', 'תהיה', 'יהיו', 'תהיינה',
+                'the', 'and', 'or', 'but', 'if', 'then', 'else', 'when', 'where', 'why', 'how',
+                'what', 'who', 'which', 'that', 'this', 'these', 'those', 'a', 'an', 'is', 'are',
+                'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did',
+                'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'cannot'
+            }
+            
+            # סינון מילים קצרות ומילות עצירה
+            filtered_words = [
+                word for word in words 
+                if len(word) >= 3 and word not in stop_words and word.isalpha()
+            ]
+            
+            # ספירת תדירות
+            word_counts = Counter(filtered_words)
+            
+            # חילוץ המילים הנפוצות ביותר
+            keywords = [word for word, count in word_counts.most_common(max_keywords)]
+            
+            return ', '.join(keywords)
+            
+        except Exception as e:
+            logger.error(f"שגיאה בחילוץ מילות מפתח: {e}")
+            return ""
+    
     def save_article(self, user_id: int, url: str, title: str, summary: str, 
                     full_text: str, category: str = 'כללי', tags: str = '') -> int:
         """שמירת כתבה במסד נתונים"""
+        # חילוץ מילות מפתח
+        keywords = self.extract_keywords(title, summary)
+        
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
         cursor.execute('''
-            INSERT INTO articles (user_id, url, title, summary, full_text, category, tags)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (user_id, url, title, summary, full_text, category, tags))
+            INSERT INTO articles (user_id, url, title, summary, full_text, category, tags, keywords)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, url, title, summary, full_text, category, tags, keywords))
         
         article_id = cursor.lastrowid
         conn.commit()
@@ -225,13 +282,13 @@ class ReadLaterBot:
         
         if category:
             cursor.execute('''
-                SELECT id, url, title, summary, full_text, category, tags, date_saved, user_id 
+                SELECT id, url, title, summary, full_text, category, tags, keywords, date_saved, user_id 
                 FROM articles WHERE user_id = ? AND category = ?
                 ORDER BY date_saved DESC
             ''', (user_id, category))
         else:
             cursor.execute('''
-                SELECT id, url, title, summary, full_text, category, tags, date_saved, user_id 
+                SELECT id, url, title, summary, full_text, category, tags, keywords, date_saved, user_id 
                 FROM articles WHERE user_id = ?
                 ORDER BY date_saved DESC
             ''', (user_id,))
@@ -272,6 +329,44 @@ class ReadLaterBot:
         conn.commit()
         conn.close()
     
+    def search_articles(self, user_id: int, search_query: str) -> List[SavedArticle]:
+        """חיפוש כתבות לפי מילות מפתח"""
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # חיפוש בכותרת, סיכום, מילות מפתח ותגיות
+        search_terms = search_query.lower().split()
+        
+        # בניית שאילתת חיפוש
+        search_conditions = []
+        search_params = []
+        
+        for term in search_terms:
+            search_conditions.append('''
+                (LOWER(title) LIKE ? OR 
+                 LOWER(summary) LIKE ? OR 
+                 LOWER(keywords) LIKE ? OR 
+                 LOWER(tags) LIKE ?)
+            ''')
+            search_params.extend([f'%{term}%', f'%{term}%', f'%{term}%', f'%{term}%'])
+        
+        # חיבור כל התנאים עם AND
+        where_clause = ' AND '.join(search_conditions)
+        
+        cursor.execute(f'''
+            SELECT id, url, title, summary, full_text, category, tags, keywords, date_saved, user_id 
+            FROM articles 
+            WHERE user_id = ? AND ({where_clause})
+            ORDER BY date_saved DESC
+        ''', [user_id] + search_params)
+        
+        articles = []
+        for row in cursor.fetchall():
+            articles.append(SavedArticle(*row))
+        
+        conn.close()
+        return articles
+    
     def export_articles(self, user_id: int, format_type: str = 'json') -> str:
         """יצוא כתבות לגיבוי"""
         articles = self.get_user_articles(user_id)
@@ -285,6 +380,7 @@ class ReadLaterBot:
                     'summary': article.summary,
                     'category': article.category,
                     'tags': article.tags,
+                    'keywords': article.keywords,
                     'date_saved': article.date_saved
                 })
             return json.dumps(data, ensure_ascii=False, indent=2)
@@ -299,7 +395,8 @@ class ReadLaterBot:
                 text += f"🔗 {article.url}\n"
                 text += f"📂 {article.category}\n"
                 text += f"📅 {date_only}\n"
-                text += f"📝 {article.summary}\n\n"
+                text += f"� {article.keywords if article.keywords else 'אין מילות מפתח'}\n"
+                text += f"� {article.summary}\n\n"
                 text += "─" * 50 + "\n\n"
             
             return text
@@ -328,6 +425,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🔸 **שליחת קישור**: פשוט שלח קישור לכתבה ואני אשמור אותה אוטומטית
 🔸 **/saved** - צפייה בכל הכתבות השמורות שלך לפי קטגוריות
 🔸 **/list** - רשימת כתבות עם מספרים למחיקה מהירה
+🔸 **/search [מילים]** - חיפוש כתבות לפי מילות מפתח, כותרת או תוכן
 🔸 **/delete [מספר]** - מחיקת כתבה לפי מספר
 🔸 **/backup** - גיבוי טקסט נח לקריאה (או `/backup json` לקובץ טכני)
 🔸 **/tag [מספר] [קטגוריה] [תגית]** - עדכון קטגוריה ותגיות
@@ -335,6 +433,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 📂 **קטגוריות אוטומטיות**:
 • טכנולוגיה • בריאות • כלכלה • פוליטיקה • השראה • כללי
+
+🔍 **דוגמאות חיפוש**:
+• `/search טכנולוגיה AI`
+• `/search בריאות תזונה`
+• `/search ממשלה`
 
 🗑️ **דרכים למחיקת כתבות**:
 • דרך הכפתורים בתצוגת הכתבה
@@ -462,7 +565,10 @@ async def saved_articles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # כפתורי פעולות נוספות
     keyboard.append([
-        InlineKeyboardButton("📊 סטטיסטיקות", callback_data="stats"),
+        InlineKeyboardButton("� חיפוש", callback_data="search"),
+        InlineKeyboardButton("� סטטיסטיקות", callback_data="stats")
+    ])
+    keyboard.append([
         InlineKeyboardButton("💾 גיבוי", callback_data="backup")
     ])
     
@@ -489,10 +595,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if row:
             # המרה לאובייקט SavedArticle
+            # row מהמסד: (id, user_id, url, title, summary, full_text, category, tags, keywords, date_saved)
+            # SavedArticle מצפה ל: (id, url, title, summary, full_text, category, tags, keywords, date_saved, user_id)
             article = SavedArticle(
                 id=row[0], url=row[2], title=row[3], summary=row[4], 
                 full_text=row[5], category=row[6], tags=row[7], 
-                date_saved=row[8], user_id=row[1]
+                keywords=row[8], date_saved=row[9], user_id=row[1]
             )
             
             # הכנת הכפתורים
@@ -536,10 +644,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if row:
             # המרה לאובייקט SavedArticle
+            # row מהמסד: (id, user_id, url, title, summary, full_text, category, tags, keywords, date_saved)
+            # SavedArticle מצפה ל: (id, url, title, summary, full_text, category, tags, keywords, date_saved, user_id)
             article = SavedArticle(
                 id=row[0], url=row[2], title=row[3], summary=row[4], 
                 full_text=row[5], category=row[6], tags=row[7], 
-                date_saved=row[8], user_id=row[1]
+                keywords=row[8], date_saved=row[9], user_id=row[1]
             )
             
             # הכנת הכפתורים
@@ -583,10 +693,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if row:
             # המרה לאובייקט SavedArticle
+            # row מהמסד: (id, user_id, url, title, summary, full_text, category, tags, keywords, date_saved)
+            # SavedArticle מצפה ל: (id, url, title, summary, full_text, category, tags, keywords, date_saved, user_id)
             article = SavedArticle(
                 id=row[0], url=row[2], title=row[3], summary=row[4], 
                 full_text=row[5], category=row[6], tags=row[7], 
-                date_saved=row[8], user_id=row[1]
+                keywords=row[8], date_saved=row[9], user_id=row[1]
             )
             
             # חיתוך הטקסט המלא למניעת חריגה ממגבלת טלגרם (4096 תווים)
@@ -886,10 +998,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if row:
             # המרה לאובייקט SavedArticle
+            # row מהמסד: (id, user_id, url, title, summary, full_text, category, tags, keywords, date_saved)
+            # SavedArticle מצפה ל: (id, url, title, summary, full_text, category, tags, keywords, date_saved, user_id)
             article = SavedArticle(
                 id=row[0], url=row[2], title=row[3], summary=row[4], 
                 full_text=row[5], category=row[6], tags=row[7], 
-                date_saved=row[8], user_id=row[1]
+                keywords=row[8], date_saved=row[9], user_id=row[1]
             )
             
             # הכנת הכפתורים המקוריים
@@ -932,12 +1046,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if row:
             # המרה לאובייקט SavedArticle - התאמת סדר השדות
-            # row מהמסד: (id, user_id, url, title, summary, full_text, category, tags, date_saved)
-            # SavedArticle מצפה ל: (id, url, title, summary, full_text, category, tags, date_saved, user_id)
+            # row מהמסד: (id, user_id, url, title, summary, full_text, category, tags, keywords, date_saved)
+            # SavedArticle מצפה ל: (id, url, title, summary, full_text, category, tags, keywords, date_saved, user_id)
             article = SavedArticle(
                 id=row[0], url=row[2], title=row[3], summary=row[4], 
                 full_text=row[5], category=row[6], tags=row[7], 
-                date_saved=row[8], user_id=row[1]
+                keywords=row[8], date_saved=row[9], user_id=row[1]
             )
             
             # הכנת הכפתורים המקוריים
@@ -992,6 +1106,92 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             stats_text += f"📂 {category}: {count} כתבות\n"
         
         await query.edit_message_text(stats_text, parse_mode='Markdown')
+        
+    elif data == "search":
+        # התחלת חיפוש
+        search_message = """
+🔍 **חיפוש כתבות**
+
+אני יכול לחפש בכתבות שלך לפי:
+• כותרות הכתבות
+• תוכן הסיכומים
+• מילות מפתח אוטומטיות
+• תגיות שהוספת
+
+📝 **איך להשתמש:**
+כתוב `/search [מילות חיפוש]`
+
+**דוגמאות:**
+• `/search טכנולוגיה AI`
+• `/search בריאות תזונה`
+• `/search ממשלה פוליטיקה`
+
+💡 **טיפ**: אפשר לחפש כמה מילים יחד - המערכת תמצא כתבות שמכילות את כל המילים.
+"""
+        await query.edit_message_text(search_message, parse_mode='Markdown')
+
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """פקודת חיפוש"""
+    user_id = update.effective_user.id
+    
+    if not context.args:
+        help_text = """
+🔍 **חיפוש כתבות**
+
+אני יכול לחפש בכתבות שלך לפי:
+• כותרות הכתבות
+• תוכן הסיכומים  
+• מילות מפתח אוטומטיות
+• תגיות שהוספת
+
+📝 **שימוש:**
+`/search [מילות חיפוש]`
+
+**דוגמאות:**
+• `/search טכנולוגיה AI`
+• `/search בריאות תזונה`
+• `/search ממשלה פוליטיקה`
+
+💡 **טיפ**: אפשר לחפש כמה מילים יחד - המערכת תמצא כתבות שמכילות את כל המילים.
+"""
+        await update.message.reply_text(help_text, parse_mode='Markdown')
+        return
+    
+    # איחוד מילות החיפוש
+    search_query = ' '.join(context.args)
+    
+    # חיפוש כתבות
+    found_articles = bot.search_articles(user_id, search_query)
+    
+    if not found_articles:
+        await update.message.reply_text(f"🔍 לא נמצאו כתבות עבור: **{search_query}**\n\n💡 נסה מילים אחרות או בדוק איות", parse_mode='Markdown')
+        return
+    
+    # הצגת תוצאות החיפוש
+    response = f"🔍 **תוצאות חיפוש עבור: \"{search_query}\"**\n\n"
+    response += f"נמצאו {len(found_articles)} כתבות:\n\n"
+    
+    # יצירת כפתורים לכתבות שנמצאו
+    keyboard = []
+    
+    # הצגת עד 8 כתבות ראשונות
+    for article in found_articles[:8]:
+        date_only = article.date_saved.split(' ')[0]
+        button_text = f"📰 {article.title[:30]}{'...' if len(article.title) > 30 else ''}"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"view_article_{article.id}")])
+    
+    # אם יש יותר מ-8 כתבות
+    if len(found_articles) > 8:
+        keyboard.append([InlineKeyboardButton(f"📋 הצג עוד {len(found_articles) - 8} תוצאות", callback_data=f"search_more_{search_query}")])
+    
+    # כפתורי ניווט
+    keyboard.append([
+        InlineKeyboardButton("🔍 חיפוש חדש", callback_data="search"),
+        InlineKeyboardButton("📚 כל הכתבות", callback_data="back_to_saved")
+    ])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(response, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def tag_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """פקודת תיוג"""
@@ -1092,6 +1292,9 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # כפתורי ניווט
     keyboard.append([
         InlineKeyboardButton("📚 תצוגת קטגוריות", callback_data="show_categories"),
+        InlineKeyboardButton("🔍 חיפוש", callback_data="search")
+    ])
+    keyboard.append([
         InlineKeyboardButton("📊 סטטיסטיקות", callback_data="stats")
     ])
     
@@ -1149,6 +1352,7 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("saved", saved_articles))
     application.add_handler(CommandHandler("list", list_command))
+    application.add_handler(CommandHandler("search", search_command))
     application.add_handler(CommandHandler("delete", delete_command))
     application.add_handler(CommandHandler("backup", backup_command))
     application.add_handler(CommandHandler("tag", tag_command))
