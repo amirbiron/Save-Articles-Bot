@@ -508,7 +508,49 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         new_category = parts[3]
         
         bot.update_article_category(article_id, new_category)
-        await query.edit_message_text(f"✅ **הקטגוריה עודכנה בהצלחה!**\n\n📂 קטגוריה חדשה: **{new_category}**", parse_mode='Markdown')
+        
+        # טעינת פרטי הכתבה מהמסד נתונים עם הקטגוריה המעודכנת
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM articles WHERE id = ? AND user_id = ?', (article_id, user_id))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            # המרה לאובייקט SavedArticle
+            article = SavedArticle(
+                id=row[0], url=row[2], title=row[3], summary=row[4], 
+                full_text=row[5], category=row[6], tags=row[7], 
+                date_saved=row[8], user_id=row[1]
+            )
+            
+            # הכנת הכפתורים המקוריים
+            keyboard = [
+                [
+                    InlineKeyboardButton("📂 שנה קטגוריה", callback_data=f"change_category_{article_id}"),
+                    InlineKeyboardButton("🔍 הצג מלא", callback_data=f"show_full_{article_id}")
+                ],
+                [
+                    InlineKeyboardButton("🗑️ מחק", callback_data=f"delete_{article_id}")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # הצגת המידע המעודכן על הכתבה
+            response_text = f"""
+✅ **הקטגוריה עודכנה בהצלחה!**
+
+� **כותרת**: {article.title}
+�📂 **קטגוריה**: {article.category}
+📝 **סיכום**:
+{article.summary}
+
+🔗 **קישור**: {article.url}
+"""
+            
+            await query.edit_message_text(response_text, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await query.edit_message_text("❌ לא נמצאה כתבה זו")
         
     elif data.startswith("back_to_article_"):
         article_id = int(data.split("_")[-1])  # לקח את האלמנט האחרון
