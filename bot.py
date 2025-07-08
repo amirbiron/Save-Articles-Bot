@@ -694,7 +694,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for article in displayed_articles:
             title = f"{article.title[:25]}{'...' if len(article.title) > 25 else ''}"
             keyboard.append([
-                InlineKeyboardButton(f"👁️ {title}", callback_data=f"view_article_list_{article.id}"),
+                InlineKeyboardButton(f"� {title}", callback_data=f"view_article_list_{article.id}"),
                 InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
             ])
         
@@ -758,7 +758,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for article in displayed_articles:
             title = f"{article.title[:25]}{'...' if len(article.title) > 25 else ''}"
             keyboard.append([
-                InlineKeyboardButton(f"👁️ {title}", callback_data=f"view_article_list_{article.id}"),
+                InlineKeyboardButton(f"� {title}", callback_data=f"view_article_list_{article.id}"),
                 InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
             ])
         
@@ -837,7 +837,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for article in articles:
             title = f"{article.title[:25]}{'...' if len(article.title) > 25 else ''}"
             keyboard.append([
-                InlineKeyboardButton(f"👁️ {title}", callback_data=f"view_article_list_{article.id}"),
+                InlineKeyboardButton(f"� {title}", callback_data=f"view_article_list_{article.id}"),
                 InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
             ])
         
@@ -1081,7 +1081,7 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for article in displayed_articles:
         title = f"{article.title[:25]}{'...' if len(article.title) > 25 else ''}"
         keyboard.append([
-            InlineKeyboardButton(f"👁️ {title}", callback_data=f"view_article_list_{article.id}"),
+            InlineKeyboardButton(f"� {title}", callback_data=f"view_article_list_{article.id}"),
             InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
         ])
     
