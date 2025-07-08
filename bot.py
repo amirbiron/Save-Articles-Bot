@@ -1,4 +1,4 @@
-THIS SHOULD BE A LINTER ERRORimport logging
+import logging
 import sqlite3
 import json
 import re
@@ -315,7 +315,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # יצירת לחצנים קבועים מתחת לשורת ההקלדה
     keyboard = [
-        [KeyboardButton("📚 רשימת כתבות"), KeyboardButton("📖 כתבות שלי")],
+        [KeyboardButton("📚 רשימת כתבות"), KeyboardButton("� קטגוריות")],
         [KeyboardButton("💾 גיבוי"), KeyboardButton("🔍 חיפוש")],
         [KeyboardButton("🆘 עזרה"), KeyboardButton("📊 סטטיסטיקות")]
     ]
