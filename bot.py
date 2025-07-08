@@ -672,7 +672,7 @@ async def saved_articles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # הצגת עד 10 כתבות ראשונות
     for article in articles[:10]:
         date_only = article.date_saved.split(' ')[0]
-        button_text = f"📰 {article.title[:35]}{'...' if len(article.title) > 35 else ''}"
+        button_text = f"{article.title[:40]}{'...' if len(article.title) > 40 else ''}"
         keyboard.append([InlineKeyboardButton(button_text, callback_data=f"view_article_{article.id}")])
     
     # אם יש יותר מ-10 כתבות
@@ -681,8 +681,8 @@ async def saved_articles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # כפתורי פעולות נוספות
     keyboard.append([
-        InlineKeyboardButton("� חיפוש", callback_data="search"),
-        InlineKeyboardButton("� סטטיסטיקות", callback_data="stats")
+        InlineKeyboardButton("🔍 חיפוש", callback_data="search"),
+        InlineKeyboardButton("📊 סטטיסטיקות", callback_data="stats")
     ])
     keyboard.append([
         InlineKeyboardButton("💾 גיבוי", callback_data="backup")
@@ -920,9 +920,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         displayed_articles = articles[:6]
         
         for article in displayed_articles:
-            title = f"{article.title[:25]}{'...' if len(article.title) > 25 else ''}"
+            title = f"{article.title[:30]}{'...' if len(article.title) > 30 else ''}"
             keyboard.append([
-                InlineKeyboardButton(f"� {title}", callback_data=f"view_article_list_{article.id}"),
+                InlineKeyboardButton(title, callback_data=f"view_article_list_{article.id}"),
                 InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
             ])
         
@@ -933,10 +933,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # כפתורי ניווט
         keyboard.append([
             InlineKeyboardButton("📚 תצוגת קטגוריות", callback_data="show_categories"),
-            InlineKeyboardButton("� חיפוש", callback_data="search")
+            InlineKeyboardButton("🔍 חיפוש", callback_data="search")
         ])
         keyboard.append([
-            InlineKeyboardButton("� סטטיסטיקות", callback_data="stats")
+            InlineKeyboardButton("📊 סטטיסטיקות", callback_data="stats")
         ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -957,7 +957,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # הצגת עד 10 כתבות ראשונות
         for article in articles[:10]:
-            button_text = f"📰 {article.title[:35]}{'...' if len(article.title) > 35 else ''}"
+            button_text = f"{article.title[:40]}{'...' if len(article.title) > 40 else ''}"
             keyboard.append([InlineKeyboardButton(button_text, callback_data=f"view_article_{article.id}")])
         
         # אם יש יותר מ-10 כתבות
@@ -966,8 +966,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # כפתורי פעולות נוספות
         keyboard.append([
-            InlineKeyboardButton("� חיפוש", callback_data="search"),
-            InlineKeyboardButton("� סטטיסטיקות", callback_data="stats")
+            InlineKeyboardButton("🔍 חיפוש", callback_data="search"),
+            InlineKeyboardButton("📊 סטטיסטיקות", callback_data="stats")
         ])
         keyboard.append([
             InlineKeyboardButton("💾 גיבוי", callback_data="backup")
@@ -990,9 +990,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         displayed_articles = articles[:6]
         
         for article in displayed_articles:
-            title = f"{article.title[:25]}{'...' if len(article.title) > 25 else ''}"
+            title = f"{article.title[:30]}{'...' if len(article.title) > 30 else ''}"
             keyboard.append([
-                InlineKeyboardButton(f"� {title}", callback_data=f"view_article_list_{article.id}"),
+                InlineKeyboardButton(title, callback_data=f"view_article_list_{article.id}"),
                 InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
             ])
         
@@ -1023,7 +1023,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # הצגת כל הכתבות
         for article in articles:
-            button_text = f"📰 {article.title[:35]}{'...' if len(article.title) > 35 else ''}"
+            button_text = f"{article.title[:40]}{'...' if len(article.title) > 40 else ''}"
             keyboard.append([InlineKeyboardButton(button_text, callback_data=f"view_article_{article.id}")])
         
         # כפתורי פעולות
@@ -1078,19 +1078,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # הצגת כל הכתבות
         for article in articles:
-            title = f"{article.title[:25]}{'...' if len(article.title) > 25 else ''}"
+            title = f"{article.title[:30]}{'...' if len(article.title) > 30 else ''}"
             keyboard.append([
-                InlineKeyboardButton(f"� {title}", callback_data=f"view_article_list_{article.id}"),
+                InlineKeyboardButton(title, callback_data=f"view_article_list_{article.id}"),
                 InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
             ])
         
         # כפתורי ניווט
         keyboard.append([
             InlineKeyboardButton("📚 תצוגת קטגוריות", callback_data="show_categories"),
-            InlineKeyboardButton("� חיפוש", callback_data="search")
+            InlineKeyboardButton("🔍 חיפוש", callback_data="search")
         ])
         keyboard.append([
-            InlineKeyboardButton("�� סטטיסטיקות", callback_data="stats")
+            InlineKeyboardButton("📊 סטטיסטיקות", callback_data="stats")
         ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1156,8 +1156,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response_text = f"""
 ✅ **הקטגוריה עודכנה בהצלחה!**
 
-� **כותרת**: {article.title}
-�� **קטגוריה**: {article.category}
+📰 **כותרת**: {article.title}
+📂 **קטגוריה**: {article.category}
 📝 **סיכום**:
 {article.summary}
 
@@ -1311,7 +1311,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # הצגת עד 8 כתבות ראשונות
     for article in found_articles[:8]:
         date_only = article.date_saved.split(' ')[0]
-        button_text = f"📰 {article.title[:30]}{'...' if len(article.title) > 30 else ''}"
+        button_text = f"{article.title[:35]}{'...' if len(article.title) > 35 else ''}"
         keyboard.append([InlineKeyboardButton(button_text, callback_data=f"view_article_{article.id}")])
     
     # אם יש יותר מ-8 כתבות
@@ -1416,9 +1416,9 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     displayed_articles = articles[:6]
     
     for article in displayed_articles:
-        title = f"{article.title[:25]}{'...' if len(article.title) > 25 else ''}"
+        title = f"{article.title[:30]}{'...' if len(article.title) > 30 else ''}"
         keyboard.append([
-            InlineKeyboardButton(f"� {title}", callback_data=f"view_article_list_{article.id}"),
+            InlineKeyboardButton(title, callback_data=f"view_article_list_{article.id}"),
             InlineKeyboardButton(f"🗑️ {article.id}", callback_data=f"delete_{article.id}")
         ])
     
