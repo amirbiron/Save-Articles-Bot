@@ -491,29 +491,47 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             
             # חיתוך הטקסט המלא למניעת חריגה ממגבלת טלגרם (4096 תווים)
-            max_length = 3500  # נשאיר מקום לכותרת ולכפתורים
+            max_length = 3200  # נשאיר מקום לכותרת ולכפתורים
             full_text = article.full_text
             
-            if len(full_text) > max_length:
-                full_text = full_text[:max_length] + "\n\n... [הטקסט חתוך - יותר מדי תווים]"
+            # שיפור עיצוב הטקסט - הוספת רווחים בין פסקאות
+            full_text = full_text.replace('\n\n', '\n\n📍 ')
+            full_text = full_text.replace('\n', '\n\n')
             
-            # הכנת כפתור חזרה
+            if len(full_text) > max_length:
+                full_text = full_text[:max_length] + "\n\n💭 *[הטקסט חתוך - הכתבה ארוכה מדי לתצוגה מלאה]*"
+            
+            # הכנת כפתור חזרה מעוצב
             keyboard = [
-                [InlineKeyboardButton("↩️ חזור לסיכום", callback_data=f"back_to_article_{article_id}")]
+                [InlineKeyboardButton("↩️ חזור לסיכום הכתבה", callback_data=f"back_to_article_{article_id}")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            # הצגת הטקסט המלא
+            # חילוץ תאריך נקי ומידע נוסף
+            date_only = article.date_saved.split(' ')[0]
+            word_count = len(article.full_text.split())
+            reading_time = max(1, word_count // 200)  # הנחה של 200 מילים לדקה
+            
+            # הצגת הטקסט המלא במבנה מעוצב
             response_text = f"""
-🔍 **טקסט מלא של הכתבה:**
+📖 **תצוגת טקסט מלא**
+
+{'═' * 30}
 
 📰 **{article.title}**
-📂 {article.category}
 
-📝 **תוכן מלא**:
+📂 **קטגוריה**: {article.category}
+📅 **נשמר**: {date_only}
+📊 **אורך**: {word_count:,} מילים (קריאה של ~{reading_time} דקות)
+🔗 **מקור**: [לחץ כאן]({article.url})
+
+{'─' * 30}
+
+📝 **תוכן הכתבה**:
+
 {full_text}
 
-🔗 **קישור**: {article.url}
+{'═' * 30}
 """
             
             await query.edit_message_text(response_text, reply_markup=reply_markup, parse_mode='Markdown')
