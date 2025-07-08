@@ -442,11 +442,16 @@ def set_webhook():
         return {"status": "error", "message": str(e)}, 500
 
 if __name__ == '__main__':
-    PORT = int(os.environ.get('PORT', 8080))
+    print("🚀 מתחיל את הבוט עם polling...")
     
-    print("🚀 מתחיל את הבוט...")
-    print(f"🌐 Port: {PORT}")
-    print(f"🔗 Webhook URL: https://save-articles-bot.onrender.com/webhook")
+    # מחיקת webhook אם קיים
+    import requests
+    try:
+        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook")
+    except:
+        pass
     
-    get_telegram_app()
-    app.run(host="0.0.0.0", port=PORT, debug=False)
+    # הפעלה עם polling
+    application = get_telegram_app()
+    print("🔄 מתחיל polling...")
+    application.run_polling(drop_pending_updates=True)
