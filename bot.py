@@ -422,23 +422,16 @@ class ReadLaterBot:
             # ייבוא הספריות הנדרשות בתוך הפונקציה
             import os
             
-            # בדיקה שהספריות זמינות
-            if pytesseract is None or Image is None:
-                logger.error("ספריות OCR לא זמינות")
-                return {
-                    'error': 'libraries_unavailable',
-                    'message': 'ספריות זיהוי הטקסט לא מותקנות. נדרש התקנת pytesseract ו-Pillow.'
-                }
-            
-            # ייבוא מקומי כגיבוי
+            # ייבוא מקומי של כל הספריות הנדרשות
             try:
                 from PIL import Image as PIL_Image, ImageEnhance
                 import pytesseract as tesseract_local
+                logger.info("ספריות OCR נטענו בהצלחה")
             except ImportError as e:
                 logger.error(f"שגיאה בייבוא ספריות OCR: {e}")
                 return {
                     'error': 'import_failed',
-                    'message': f'שגיאה בטעינת ספריות OCR: {str(e)}'
+                    'message': f'שגיאה בטעינת ספריות OCR: {str(e)}. ודא שמותקנות הספריות pytesseract ו-Pillow.'
                 }
             
             logger.info(f"מתחיל עיבוד תמונה: {image_path}")
@@ -1024,14 +1017,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     error_msg = f"❌ <b>תמונה לא תקינה</b>\n\n"
                     error_msg += f"פרטי השגיאה: {error_message}\n\n"
                     error_msg += f"💡 וודא שאתה שולח תמונה תקינה (JPG/PNG)"
-                elif error_type == 'libraries_unavailable':
-                    error_msg = f"❌ <b>ספריות OCR לא זמינות</b>\n\n"
-                    error_msg += f"פרטי השגיאה: {error_message}\n\n"
-                    error_msg += f"שגיאה טכנית במערכת. צור קשר עם המפתח."
                 elif error_type == 'import_failed':
                     error_msg = f"❌ <b>שגיאה בטעינת ספריות OCR</b>\n\n"
                     error_msg += f"פרטי השגיאה: {error_message}\n\n"
-                    error_msg += f"שגיאה טכנית במערכת. צור קשר עם המפתח."
+                    error_msg += f"💡 הספריות מותקנות, יכול להיות שיש בעיה זמנית. נסה שוב בעוד רגע."
                 elif error_type == 'tesseract_unavailable':
                     error_msg = f"❌ <b>מנוע זיהוי הטקסט לא זמין</b>\n\n"
                     error_msg += f"שגיאה טכנית במערכת. צור קשר עם המפתח."
