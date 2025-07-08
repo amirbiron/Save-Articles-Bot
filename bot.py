@@ -618,10 +618,6 @@ async def tag_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ שגיאה: {str(e)}")
 
 import os
-from flask import Flask, request
-
-# הוסף בתחילת הקובץ
-app = Flask(__name__)
 
 def main():
     """הפעלת הבוט"""
@@ -640,36 +636,13 @@ def main():
     # טיפול בכפתורים
     application.add_handler(CallbackQueryHandler(button_callback))
     
-    # הגדרת Webhook
-    PORT = int(os.environ.get('PORT', 8080))
-    WEBHOOK_URL = f"https://your-app-name.onrender.com/webhook"
+    print("🤖 הבוט מופעל במצב polling...")
+    print("📱 פקודת /saved אמורה לעבוד עכשיו!")
     
-    print("🤖 הבוט מופעל...")
-    
-    # הפעלת הבוט עם Webhook
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path="/webhook",
-        webhook_url=WEBHOOK_URL
-    )
+    # הפעלת הבוט עם Polling (לפיתוח מקומי)
+    application.run_polling()
 
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    """קבלת עדכונים מטלגרם"""
-    update = request.get_json()
-    application.update_queue.put(update)
-    return 'OK'
-
-@app.route('/')
-def home():
-    """עמוד בית - כדי שRender יבין שזה Web Service"""
-    return "🤖 Telegram Read Later Bot is running!"
-
-@app.route('/health')
-def health():
-    """בדיקת תקינות"""
-    return {"status": "healthy", "bot": "running"}
+# Flask routes הוסרו - הבוט עובד במצב polling
 
 if __name__ == '__main__':
     main()
