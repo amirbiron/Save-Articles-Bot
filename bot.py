@@ -494,9 +494,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             max_length = 3200  # נשאיר מקום לכותרת ולכפתורים
             full_text = article.full_text
             
-            # שיפור עיצוב הטקסט - הוספת רווחים בין פסקאות
-            full_text = full_text.replace('\n\n', '\n\n📍 ')
-            full_text = full_text.replace('\n', '\n\n')
+            # עיצוב נקי של הטקסט
+            full_text = full_text.strip()
             
             if len(full_text) > max_length:
                 full_text = full_text[:max_length] + "\n\n💭 *[הטקסט חתוך - הכתבה ארוכה מדי לתצוגה מלאה]*"
