@@ -18,14 +18,9 @@ try:
     from newspaper import Article
     import openai
     from transformers import pipeline
-    import pytesseract
-    from PIL import Image, ImageEnhance
 except ImportError as e:
-    print(f"נדרשות ספריות נוספות: pip install newspaper3k openai transformers torch pytesseract Pillow")
+    print(f"נדרשות ספריות נוספות: pip install newspaper3k openai transformers torch")
     print(f"פרטי השגיאה: {e}")
-    pytesseract = None
-    Image = None
-    ImageEnhance = None
 
 # הגדרות
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -416,377 +411,9 @@ class ReadLaterBot:
         
         return 'כללי'
     
-    def clean_ocr_text(self, text: str) -> str:
-        """ניקוי מתקדם של טקסט שחולץ מתמונה"""
-        try:
-            import re
-            
-            logger.info("מתחיל ניקוי טקסט OCR מתקדם")
-            
-            # פיצול לשורות
-            lines = text.split('\n')
-            logger.info(f"מספר שורות לפני ניקוי: {len(lines)}")
-            
-            clean_lines = []
-            removed_lines = []
-            
-            for line in lines:
-                line = line.strip()
-                
-                # דלג על שורות קצרות מדי
-                if len(line) < 3:
-                    removed_lines.append(f"קצר מדי: '{line}'")
-                    continue
-                
-                # דלג על שורות שמכילות רק מספרים
-                if re.match(r'^[\d\s\.\-/]+$', line):
-                    removed_lines.append(f"מספרים בלבד: '{line}'")
-                    continue
-                
-                # הסר שורות תאריך נפוצות
-                date_patterns = [
-                    r'^\d{1,2}[/.]\d{1,2}[/.]\d{2,4}$',  # dd/mm/yyyy או dd.mm.yyyy
-                    r'^\d{1,2}\s+(ינואר|פברואר|מרץ|אפריל|מאי|יוני|יולי|אוגוסט|ספטמבר|אוקטובר|נובמבר|דצמבר)\s+\d{4}$',
-                    r'^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}$',
-                    r'^(יום\s+)?(ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת),?\s+\d{1,2}[/.]\d{1,2}[/.]\d{2,4}$',
-                    r'.*\d{1,2}[/.]\d{1,2}[/.]\d{2,4}.*',  # כל שורה שמכילה תאריך
-                    r'.*20\d{2}.*',  # כל שורה שמכילה שנה (2000-2099)
-                ]
-                
-                is_date = False
-                for pattern in date_patterns:
-                    if re.match(pattern, line, re.IGNORECASE):
-                        is_date = True
-                        break
-                
-                if is_date:
-                    removed_lines.append(f"תאריך: '{line}'")
-                    continue
-                
-                # הסר שורות צילום וקרדיטים
-                photographer_patterns = [
-                    r'^(צילום|צלם|photo|photographer|by):?\s*.+$',
-                    r'^.*\s+(צילום|צלם|photo|photographer)\s*[:]\s*.+$',
-                    r'^(באדיבות|courtesy|credit):?\s*.+$',
-                    r'^(מקור|source):?\s*.+$',
-                    r'^(רויטרס|reuters|ap|afp|getty|shutterstock).*$',
-                    r'.*צילום.*',  # כל שורה שמכילה "צילום"
-                    r'.*באדיבות.*',  # כל שורה שמכילה "באדיבות"
-                    r'.*מקור.*',  # כל שורה שמכילה "מקור"
-                ]
-                
-                is_credit = False
-                for pattern in photographer_patterns:
-                    if re.match(pattern, line, re.IGNORECASE):
-                        is_credit = True
-                        break
-                
-                if is_credit:
-                    removed_lines.append(f"קרדיט: '{line}'")
-                    continue
-                
-                # הסר כתוביות תמונה נפוצות
-                caption_patterns = [
-                    r'^(בתמונה|בצילום|במרכז|משמאל|מימין|למעלה|למטה):?\s*.+$',
-                    r'^(מלמעלה|מלמטה|מימין|משמאל|באמצע):?\s*.+$',
-                    r'^.*\s+(בתמונה|בצילום)\s*[:]\s*.+$'
-                ]
-                
-                is_caption = False
-                for pattern in caption_patterns:
-                    if re.match(pattern, line, re.IGNORECASE):
-                        is_caption = True
-                        break
-                
-                if is_caption:
-                    removed_lines.append(f"כתובית: '{line}'")
-                    continue
-                
-                # הסר מספרי עמוד ופרקים
-                page_patterns = [
-                    r'^עמוד\s+\d+$',
-                    r'^עמ\'\s*\d+$',
-                    r'^page\s+\d+$',
-                    r'^p\.\s*\d+$',
-                    r'^\d+\s*$'  # שורות עם מספר בלבד
-                ]
-                
-                is_page = False
-                for pattern in page_patterns:
-                    if re.match(pattern, line, re.IGNORECASE):
-                        is_page = True
-                        break
-                
-                if is_page:
-                    removed_lines.append(f"עמוד: '{line}'")
-                    continue
-                
-                # הסר קישורים וכתובות אימייל
-                if re.search(r'https?://|www\.|@.*\.com|\.co\.il', line, re.IGNORECASE):
-                    removed_lines.append(f"קישור/אימייל: '{line}'")
-                    continue
-                
-                # הסר שורות שמכילות הרבה סימני פיסוק
-                punctuation_ratio = len(re.findall(r'[^\w\s]', line)) / len(line) if len(line) > 0 else 0
-                if punctuation_ratio > 0.5:
-                    removed_lines.append(f"הרבה פיסוק: '{line}'")
-                    continue
-                
-                # הסר שורות חוזרות (כותרות שחוזרות)
-                if len(clean_lines) > 0 and line.lower() in [prev_line.lower() for prev_line in clean_lines[-3:]]:
-                    removed_lines.append(f"חוזרת: '{line}'")
-                    continue
-                
-                # נקה רווחים מרובים
-                line = re.sub(r'\s+', ' ', line)
-                
-                # הוסף את השורה המנוקה
-                clean_lines.append(line)
-            
-            # חיבור השורות חזרה
-            result = '\n'.join(clean_lines)
-            
-            # ניקוי סופי - הסרת שורות ריקות מרובות
-            result = re.sub(r'\n\s*\n\s*\n', '\n\n', result)
-            
-            logger.info(f"ניקוי הושלם: {len(clean_lines)} שורות נשארו, {len(removed_lines)} שורות הוסרו")
-            if removed_lines:
-                logger.info(f"דוגמאות לשורות שהוסרו: {removed_lines[:5]}")
-            
-            return result.strip()
-            
-        except Exception as e:
-            logger.error(f"שגיאה בניקוי טקסט OCR: {e}")
-            # אם יש שגיאה, החזר ניקוי בסיסי
-            lines = text.split('\n')
-            basic_clean = [line.strip() for line in lines if len(line.strip()) > 3]
-            return '\n'.join(basic_clean)
+
     
-    def extract_title_from_ocr_text(self, text: str) -> str:
-        """חילוץ כותרת חכם מטקסט OCR מנוקה"""
-        try:
-            lines = text.split('\n')
-            if not lines:
-                return 'כותרת מתמונה'
-            
-            # מצא את השורה הטובה ביותר לכותרת
-            title_candidates = []
-            
-            for i, line in enumerate(lines[:5]):  # בדוק את 5 השורות הראשונות
-                line = line.strip()
-                if len(line) < 5:  # שורות קצרות מדי
-                    continue
-                
-                score = 0
-                
-                # נקודות חיוביות
-                # שורות ראשונות מקבלות יותר נקודות
-                score += (5 - i) * 2
-                
-                # אורך מתאים (לא קצר מדי, לא ארוך מדי לכותרת)
-                if 10 <= len(line) <= 120:
-                    score += 3
-                elif 5 <= len(line) <= 150:
-                    score += 1
-                
-                # אם יש אותיות גדולות - סימן טוב לכותרת
-                if any(c.isupper() for c in line):
-                    score += 1
-                
-                # אם אין סימני פיסוק מוזרים
-                if not any(char in line for char in ['(', ')', '[', ']', '@', '#']):
-                    score += 1
-                
-                # נקודות שליליות
-                # אם יש הרבה מספרים - כנראה לא כותרת
-                numbers_count = len([c for c in line if c.isdigit()])
-                if numbers_count > len(line) * 0.3:
-                    score -= 2
-                
-                # אם השורה מתחילה במילות מפתח לא מתאימות לכותרת
-                lower_line = line.lower()
-                bad_starts = ['לפי', 'על פי', 'כך', 'זה', 'היא', 'הוא', 'כמו', 'אבל', 'גם']
-                if any(lower_line.startswith(bad) for bad in bad_starts):
-                    score -= 1
-                
-                title_candidates.append((line, score))
-            
-            # מיין לפי ציון ובחר את הטוב ביותר
-            title_candidates.sort(key=lambda x: x[1], reverse=True)
-            
-            if title_candidates and title_candidates[0][1] > 0:
-                return title_candidates[0][0][:200]  # הגבל אורך
-            else:
-                # אם לא נמצאה כותרת טובה, קח את השורה הראשונה המתאימה
-                for line in lines[:3]:
-                    if len(line.strip()) >= 5:
-                        return line.strip()[:200]
-                
-                return 'כותרת מתמונה'
-                
-        except Exception as e:
-            logger.error(f"שגיאה בחילוץ כותרת: {e}")
-            lines = text.split('\n')
-            return lines[0][:200] if lines and lines[0].strip() else 'כותרת מתמונה'
-    
-    def extract_text_from_image(self, image_path: str) -> Dict:
-        """חילוץ טקסט מתמונה באמצעות OCR"""
-        try:
-            # ייבוא הספריות הנדרשות בתוך הפונקציה
-            import os
-            
-            # ייבוא מקומי של כל הספריות הנדרשות
-            try:
-                from PIL import Image as PIL_Image, ImageEnhance
-                import pytesseract as tesseract_local
-                logger.info("ספריות OCR נטענו בהצלחה")
-            except ImportError as e:
-                logger.error(f"שגיאה בייבוא ספריות OCR: {e}")
-                return {
-                    'error': 'import_failed',
-                    'message': f'שגיאה בטעינת ספריות OCR: {str(e)}. ודא שמותקנות הספריות pytesseract ו-Pillow.'
-                }
-            
-            logger.info(f"מתחיל עיבוד תמונה: {image_path}")
-            
-            # בדיקה שהקובץ קיים
-            if not os.path.exists(image_path):
-                logger.error(f"קובץ התמונה לא נמצא: {image_path}")
-                return {
-                    'error': 'file_not_found',
-                    'message': 'קובץ התמונה לא נמצא במערכת.'
-                }
-            
-            # בדיקת גודל הקובץ
-            file_size = os.path.getsize(image_path)
-            logger.info(f"גודל קובץ התמונה: {file_size} bytes")
-            
-            if file_size == 0:
-                return {
-                    'error': 'empty_file',
-                    'message': 'קובץ התמונה ריק.'
-                }
-            
-            # פתיחת התמונה
-            try:
-                image = PIL_Image.open(image_path)
-                logger.info(f"התמונה נפתחה בהצלחה. גודל: {image.size}, מצב: {image.mode}")
-            except Exception as e:
-                logger.error(f"שגיאה בפתיחת התמונה: {e}")
-                return {
-                    'error': 'invalid_image',
-                    'message': f'לא ניתן לפתוח את התמונה. פרטי השגיאה: {str(e)}'
-                }
-            
-            # שיפור איכות התמונה לOCR טוב יותר
-            try:
-                # המרה לגוונים של אפור
-                if image.mode != 'L':
-                    image = image.convert('L')
-                    logger.info("התמונה הומרה לגוונים של אפור")
-                
-                # שיפור הניגודיות
-                enhancer = ImageEnhance.Contrast(image)
-                image = enhancer.enhance(1.5)  # הגדלת ניגודיות
-                logger.info("ניגודיות התמונה שופרה")
-                
-            except Exception as e:
-                logger.error(f"שגיאה בשיפור התמונה: {e}")
-                # נמשיך עם התמונה המקורית
-            
-            # ניסיון חילוץ טקסט בעברית ואנגלית
-            try:
-                logger.info("מתחיל זיהוי טקסט...")
-                
-                # בדיקה ש-Tesseract זמין
-                try:
-                    tesseract_version = tesseract_local.get_tesseract_version()
-                    logger.info(f"Tesseract version: {tesseract_version}")
-                except Exception as e:
-                    logger.error(f"Tesseract לא זמין: {e}")
-                    return {
-                        'error': 'tesseract_unavailable',
-                        'message': 'מנוע זיהוי הטקסט לא זמין במערכת.'
-                    }
-                
-                # תחילה ננסה עברית
-                try:
-                    hebrew_text = tesseract_local.image_to_string(image, lang='heb', config='--psm 6')
-                    logger.info(f"טקסט עברי זוהה: {len(hebrew_text)} תווים")
-                except Exception as e:
-                    logger.error(f"שגיאה בזיהוי עברית: {e}")
-                    hebrew_text = ""
-                
-                # אם לא מצאנו הרבה עברית, ננסה אנגלית
-                try:
-                    english_text = tesseract_local.image_to_string(image, lang='eng', config='--psm 6')
-                    logger.info(f"טקסט אנגלי זוהה: {len(english_text)} תווים")
-                except Exception as e:
-                    logger.error(f"שגיאה בזיהוי אנגלית: {e}")
-                    english_text = ""
-                
-                # בחירת הטקסט הטוב יותר (יותר תווים = יותר טוב)
-                if len(hebrew_text.strip()) > len(english_text.strip()):
-                    extracted_text = hebrew_text
-                    detected_lang = 'hebrew'
-                    logger.info("נבחרה עברית כשפה עיקרית")
-                else:
-                    extracted_text = english_text
-                    detected_lang = 'english'
-                    logger.info("נבחרה אנגלית כשפה עיקרית")
-                
-                # ניקוי הטקסט
-                extracted_text = extracted_text.strip()
-                logger.info(f"טקסט לאחר ניקוי ראשוני: {len(extracted_text)} תווים")
-                
-                if len(extracted_text) < 10:
-                    logger.warning("לא נמצא מספיק טקסט בתמונה")
-                    return {
-                        'error': 'insufficient_text',
-                        'message': 'לא נמצא מספיק טקסט בתמונה. אנא וודא שהתמונה ברורה וכוללת טקסט קריא.'
-                    }
-                
-                # ניקוי מתקדם של הטקסט
-                logger.info(f"טקסט לפני ניקוי: {len(extracted_text)} תווים")
-                logger.info(f"דוגמת טקסט לפני ניקוי: {extracted_text[:200]}...")
-                
-                final_text = self.clean_ocr_text(extracted_text)
-                lines_count = len(final_text.split('\n'))
-                
-                logger.info(f"טקסט אחרי ניקוי: {len(final_text)} תווים, {lines_count} שורות")
-                logger.info(f"דוגמת טקסט אחרי ניקוי: {final_text[:200]}...")
-                
-                if len(final_text) < 20:  # הורדתי מ-30 ל-20
-                    return {
-                        'error': 'insufficient_text',
-                        'message': 'לא נמצא מספיק טקסט בתמונה. אנא וודא שהתמונה ברורה וכוללת טקסט קריא.'
-                    }
-                
-                # חיפוש כותרת חכם יותר
-                title = self.extract_title_from_ocr_text(final_text)
-                
-                logger.info(f"כותרת שזוהתה: {title[:50]}...")
-                
-                return {
-                    'title': title[:200],  # הגבל אורך כותרת
-                    'text': final_text,
-                    'detected_language': detected_lang,
-                    'confidence': 'high' if len(final_text) > 100 else 'medium'
-                }
-                
-            except Exception as e:
-                logger.error(f"שגיאה בחילוץ טקסט מתמונה: {e}")
-                return {
-                    'error': 'ocr_failed',
-                    'message': f'שגיאה בזיהוי הטקסט: {str(e)}'
-                }
-                
-        except Exception as e:
-            logger.error(f"שגיאה כללית בטעינת התמונה: {e}")
-            return {
-                'error': 'image_load_failed',
-                'message': f'שגיאה בטעינת התמונה: {str(e)}'
-            }
+
 
     def extract_keywords(self, title: str, text: str, max_keywords: int = 8) -> str:
         """חילוץ מילות מפתח עיקריות מהטקסט"""
@@ -998,6 +625,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📚 שלום וברוך הבא ל"שמור לי לקרוא אחר כך"! 
 
 🔸 שלח לי קישור לכתבה, ואני אסכם ואשמור אותה לך במקום מסודר
+🔸 הבוט יזהה אוטומטית את הקטגוריה ויכין סיכום חכם
 🔸 לחץ על "🔍 חיפוש" ואז כתוב מילות חיפוש ישירות
 
 קדימה, שלח לי קישור לכתבה מעניינת! 🚀
@@ -1010,7 +638,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📖 איך להשתמש בבוט:
 
 🔸 <b>שליחת קישור:</b> שלח קישור לכתבה (גם בתוך טקסט!) ואני אשמור אותה אוטומטית
-🔸 <b>צילום מסך:</b> שלח צילום מסך של כתבה ואני אחלץ את הטקסט (OCR)
 🔸 <b>הכתבות שלי:</b> לחץ על הכפתור כדי לראות את כל הכתבות השמורות
 🔸 <b>רשימת כתבות:</b> רשימה עם כפתורי צפייה ומחיקה לכל כתבה
 🔸 <b>חיפוש:</b> לחץ על הכפתור ואז כתוב מילות חיפוש ישירות
@@ -1025,13 +652,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • "תראה את הכתבה הזאת: https://kan.org.il/..." (בתוך טקסט)
 • כמה קישורים בהודעה אחת - אני אתן לך לבחור!
 
-📸 <b>טיפים לצילום מסך טוב:</b>
-• צלם ישר ולא בזווית
-• ודא שהטקסט ברור וקריא
-• השתמש בתאורה טובה
-• תמיכה בעברית ואנגלית
-• הבוט יזהה אוטומטית את השפה
-• הבוט יסיר אוטומטית תאריכים וקרדיטים
+� <b>אתרים נתמכים:</b>
+• ynet.co.il
+• kan.org.il
+• israel-today.co.il
+• haaretz.co.il
+• news.walla.co.il
+• ועוד אתרים רבים!
 
 ⚡ <b>פקודות מתקדמות (אופציונלי):</b>
 • /delete [מספר] - מחיקת כתבה לפי מספר
@@ -1052,6 +679,23 @@ def extract_urls_from_text(text: str) -> List[str]:
     url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
     urls = re.findall(url_pattern, text)
     return urls
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """הודעה למשתמש שהבוט לא תומך בתמונות"""
+    await update.message.reply_text(
+        "📸 **מצטער, אני לא תומך יותר בעיבוד תמונות**\n\n"
+        "🔗 **במקום זאת, שלח לי קישור לכתבה!**\n\n"
+        "📰 אתרים נתמכים:\n"
+        "• ynet.co.il\n"
+        "• kan.org.il\n"
+        "• israel-today.co.il\n"
+        "• haaretz.co.il\n"
+        "• news.walla.co.il\n"
+        "• ועוד...\n\n"
+        "💡 פשוט העתק את הקישור מהדפדפן ושלח לי!",
+        parse_mode='Markdown',
+        reply_markup=get_main_keyboard()
+    )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """טיפול בהודעות טקסט - כפתורים, חיפוש וחילוץ קישורים"""
@@ -1183,158 +827,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='HTML'
     )
 
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """טיפול בתמונות - חילוץ טקסט באמצעות OCR"""
-    user_id = update.effective_user.id
-    
-    # הודעת טעינה
-    loading_message = await update.message.reply_text("🖼️ מעבד את התמונה...")
-    
-    try:
-        # קבלת התמונה הגדולה ביותר
-        photo = update.message.photo[-1]
-        
-        # יצירת שם קובץ זמני
-        import tempfile
-        import os
-        temp_dir = tempfile.mkdtemp()
-        temp_file_path = os.path.join(temp_dir, f"image_{user_id}_{photo.file_id}.jpg")
-        
-        try:
-            # הורדת התמונה
-            await loading_message.edit_text("📥 מוריד את התמונה...")
-            file = await context.bot.get_file(photo.file_id)
-            await file.download_to_drive(temp_file_path)
-            
-            # חילוץ טקסט מהתמונה
-            await loading_message.edit_text("🔍 מזהה טקסט בתמונה...")
-            ocr_result = bot.extract_text_from_image(temp_file_path)
-            
-            if 'error' in ocr_result:
-                error_type = ocr_result.get('error', 'unknown')
-                error_message = ocr_result.get('message', 'שגיאה לא ידועה')
-                
-                # הודעת שגיאה מפורטת לפי סוג השגיאה
-                if error_type == 'file_not_found':
-                    error_msg = f"❌ <b>קובץ התמונה לא נמצא</b>\n\n"
-                    error_msg += f"פרטי השגיאה: {error_message}\n\n"
-                    error_msg += f"💡 נסה לשלוח את התמונה שוב"
-                elif error_type == 'invalid_image':
-                    error_msg = f"❌ <b>תמונה לא תקינה</b>\n\n"
-                    error_msg += f"פרטי השגיאה: {error_message}\n\n"
-                    error_msg += f"💡 וודא שאתה שולח תמונה תקינה (JPG/PNG)"
-                elif error_type == 'import_failed':
-                    error_msg = f"❌ <b>שגיאה בטעינת ספריות OCR</b>\n\n"
-                    error_msg += f"פרטי השגיאה: {error_message}\n\n"
-                    error_msg += f"💡 הספריות מותקנות, יכול להיות שיש בעיה זמנית. נסה שוב בעוד רגע."
-                elif error_type == 'tesseract_unavailable':
-                    error_msg = f"❌ <b>מנוע זיהוי הטקסט לא זמין</b>\n\n"
-                    error_msg += f"שגיאה טכנית במערכת. צור קשר עם המפתח."
-                elif error_type == 'insufficient_text':
-                    error_msg = f"🔍 <b>לא נמצא מספיק טקסט</b>\n\n"
-                    error_msg += f"{error_message}\n\n"
-                    error_msg += f"💡 טיפים לתמונה טובה יותר:\n"
-                    error_msg += f"• ודא שהטקסט ברור וקריא\n"
-                    error_msg += f"• צלם ישר ולא בזווית\n"
-                    error_msg += f"• השתמש בתאורה טובה\n"
-                    error_msg += f"• הגדל את גודל הטקסט אם אפשר"
-                else:
-                    error_msg = f"❌ <b>שגיאה בעיבוד התמונה</b>\n\n"
-                    error_msg += f"סוג השגיאה: {error_type}\n"
-                    error_msg += f"פרטים: {error_message}\n\n"
-                    error_msg += f"💡 טיפים לתמונה טובה יותר:\n"
-                    error_msg += f"• ודא שהטקסט ברור וקריא\n"
-                    error_msg += f"• צלם ישר ולא בזווית\n"
-                    error_msg += f"• השתמש בתאורה טובה\n"
-                    error_msg += f"• נסה תמונה באיכות גבוהה יותר"
-                
-                await loading_message.edit_text(error_msg, parse_mode='HTML')
-                return
-            
-            # עיבוד הטקסט שחולץ
-            await loading_message.edit_text("🤖 מכין סיכום...")
-            
-            title = ocr_result['title']
-            extracted_text = ocr_result['text']
-            detected_lang = ocr_result['detected_language']
-            confidence = ocr_result['confidence']
-            
-            # יצירת סיכום
-            summary = bot.summarize_text(extracted_text)
-            
-            # זיהוי קטגוריה
-            category = bot.detect_category(title, extracted_text)
-            
-            # שמירה במסד נתונים (ללא URL אמיתי)
-            fake_url = f"image_upload_{user_id}_{photo.file_id}"
-            
-            article_id = bot.save_article(
-                user_id=user_id,
-                url=fake_url,
-                title=title,
-                summary=summary,
-                full_text=extracted_text,
-                category=category
-            )
-            
-            # הכנת תגובה עם כפתורים
-            keyboard = [
-                [
-                    InlineKeyboardButton("📂 שנה קטגוריה", callback_data=f"change_category_{article_id}"),
-                    InlineKeyboardButton("🔍 הצג מלא", callback_data=f"show_full_{article_id}")
-                ],
-                [
-                    InlineKeyboardButton("✏️ ערוך", callback_data=f"edit_{article_id}"),
-                    InlineKeyboardButton("🗑️ מחק", callback_data=f"delete_{article_id}")
-                ]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            # סמלים לפי שפה שזוהתה
-            lang_emoji = "🇮🇱" if detected_lang == "hebrew" else "🇺🇸"
-            confidence_emoji = "✅" if confidence == "high" else "⚠️"
-            
-            response_text = f"""
-📸 <b>תמונה נשמרה בהצלחה!</b>
 
-{lang_emoji} <b>שפה מזוהה</b>: {detected_lang}
-{confidence_emoji} <b>רמת זיהוי</b>: {confidence}
-
-📰 <b>כותרת</b>: {title}
-📂 <b>קטגוריה</b>: {category}
-
-📝 <b>סיכום</b>:
-{summary}
-
-💡 <i>ניתן לערוך את התוכן או לשנות קטגוריה</i>
-"""
-            
-            await loading_message.edit_text(response_text, reply_markup=reply_markup, parse_mode='HTML')
-            
-            # שליחת הודעה נוספת עם המקלדת הקבועה
-            await update.message.reply_text(
-                "📸 <b>התמונה עובדה בהצלחה!</b>\n\nמה תרצה לעשות עכשיו?",
-                reply_markup=get_main_keyboard(),
-                parse_mode='HTML'
-            )
-            
-        finally:
-            # ניקוי - מחיקת הקובץ הזמני
-            try:
-                if os.path.exists(temp_file_path):
-                    os.remove(temp_file_path)
-                os.rmdir(temp_dir)
-            except Exception as cleanup_error:
-                logger.error(f"שגיאה בניקוי קבצים זמניים: {cleanup_error}")
-                
-    except Exception as e:
-        logger.error(f"שגיאה בעיבוד תמונה: {e}")
-        await loading_message.edit_text(
-            f"❌ <b>שגיאה בעיבוד התמונה</b>\n\n"
-            f"פרטי השגיאה: {str(e)}\n\n"
-            f"💡 נסה שוב עם תמונה אחרת או בדוק שהתמונה תקינה.",
-            parse_mode='HTML'
-        )
 
 async def handle_url(url: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
     """טיפול בקישורים"""
@@ -2340,16 +1833,15 @@ def main():
     # טיפול בהודעות טקסט - כפתורים, חיפוש וקישורים
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # טיפול בתמונות - חילוץ טקסט באמצעות OCR
+    # טיפול בתמונות - הודעה שהבוט לא תומך
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
     # טיפול בכפתורים
     application.add_handler(CallbackQueryHandler(button_callback))
     
     print("🤖 הבוט מופעל במצב polling...")
-    print("📱 פקודת /saved אמורה לעבוד עכשיו!")
-    print("📸 תכונת OCR (זיהוי טקסט בתמונות) זמינה!")
-    print("🔧 Debug mode: פעיל - לוגים מפורטים יוצגו")
+    print("📱 הבוט מוכן לקבל קישורים לכתבות!")
+    print("� כל הפונקציות זמינות: שמירה, חיפוש, גיבוי ועוד")
     
     # הפעלת הבוט עם Polling (לפיתוח מקומי)
     application.run_polling()
