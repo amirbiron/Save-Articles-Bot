@@ -10,7 +10,7 @@ import asyncio
 import aiohttp
 from dataclasses import dataclass
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 # ספריות חיצוניות נדרשות
@@ -29,6 +29,9 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = "7560439844:AAEEVJwLFO44j7QoxZNULRlYlZMKeRK3yP0"
 OPENAI_API_KEY = "YOUR_OPENAI_API_KEY"  # אופציונלי
 DB_PATH = "read_later.db"
+
+# מצבי משתמשים (פשוט בזיכרון)
+user_states = {}
 
 @dataclass
 class SavedArticle:
@@ -401,6 +404,16 @@ class ReadLaterBot:
             
             return text
 
+# פונקציה ליצירת מקלדת קבועה
+def get_main_keyboard():
+    """יצירת מקלדת קבועה עם כפתורי פעולה עיקריים"""
+    keyboard = [
+        [KeyboardButton("📚 הכתבות שלי"), KeyboardButton("📋 רשימת כתבות")],
+        [KeyboardButton("🔍 חיפוש"), KeyboardButton("💾 גיבוי")],
+        [KeyboardButton("📊 סטטיסטיקות"), KeyboardButton("❓ עזרה")]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
+
 # הגדרת הבוט
 bot = ReadLaterBot(use_openai=False)  # שנה ל-True אם יש לך OpenAI API key
 
@@ -410,12 +423,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📚 שלום וברוך הבא ל"שמור לי לקרוא אחר כך"! 
 
 🔸 שלח לי קישור לכתבה, ואני אסכם ואשמור אותה לך במקום מסודר.
-🔸 השתמש ב-/saved כדי לראות את כל הכתבות שלך
-🔸 השתמש ב-/help לעזרה נוספת
+🔸 השתמש בכפתורים למטה או שלח קישור ישירות
+🔸 לחץ על "🔍 חיפוש" ואז כתוב מילות חיפוש ישירות
 
 קדימה, שלח לי קישור לכתבה מעניינת! 🚀
 """
-    await update.message.reply_text(welcome_message)
+    await update.message.reply_text(welcome_message, reply_markup=get_main_keyboard())
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """פקודת עזרה"""
@@ -447,15 +460,109 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """טיפול בקישורים"""
-    url = update.message.text.strip()
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """טיפול בהודעות טקסט - כפתורים וחיפוש"""
+    text = update.message.text.strip()
     user_id = update.effective_user.id
     
-    # בדיקה שזה אכן קישור
-    if not re.match(r'https?://', url):
-        await update.message.reply_text("אנא שלח קישור תקין (מתחיל ב-http או https)")
+    # בדיקה אם זה כפתור מהמקלדת הקבועה
+    if text == "📚 הכתבות שלי":
+        await saved_articles(update, context)
         return
+    elif text == "📋 רשימת כתבות":
+        await list_command(update, context)
+        return
+    elif text == "🔍 חיפוש":
+        user_states[user_id] = "searching"
+        await update.message.reply_text(
+            "🔍 **מצב חיפוש פעיל**\n\n"
+            "כתוב עכשיו את מילות החיפוש שלך:\n"
+            "• דוגמאות: טכנולוגיה AI\n"
+            "• או: בריאות תזונה\n"
+            "• או: פוליטיקה ממשלה\n\n"
+            "💡 אני אחפש בכותרות, סיכומים ומילות מפתח",
+            parse_mode='Markdown'
+        )
+        return
+    elif text == "💾 גיבוי":
+        await backup_command(update, context)
+        return
+    elif text == "📊 סטטיסטיקות":
+        # נוסיף סטטיסטיקות
+        articles = bot.get_user_articles(user_id)
+        categories = {}
+        for article in articles:
+            categories[article.category] = categories.get(article.category, 0) + 1
+        
+        stats_text = f"📊 **הסטטיסטיקות שלך:**\n\n"
+        stats_text += f"📚 סה\"כ כתבות: {len(articles)}\n\n"
+        
+        for category, count in sorted(categories.items(), key=lambda x: x[1], reverse=True):
+            stats_text += f"📂 {category}: {count} כתבות\n"
+        
+        await update.message.reply_text(stats_text, parse_mode='Markdown')
+        return
+    elif text == "❓ עזרה":
+        await help_command(update, context)
+        return
+    
+    # בדיקה אם המשתמש במצב חיפוש
+    if user_states.get(user_id) == "searching":
+        user_states[user_id] = None  # איפוס מצב
+        
+        # חיפוש כתבות
+        found_articles = bot.search_articles(user_id, text)
+        
+        if not found_articles:
+            await update.message.reply_text(
+                f"🔍 לא נמצאו כתבות עבור: **{text}**\n\n💡 נסה מילים אחרות או בדוק איות",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # הצגת תוצאות החיפוש
+        response = f"🔍 **תוצאות חיפוש עבור: \"{text}\"**\n\n"
+        response += f"נמצאו {len(found_articles)} כתבות:\n\n"
+        
+        # יצירת כפתורים לכתבות שנמצאו
+        keyboard = []
+        
+        # הצגת עד 8 כתבות ראשונות
+        for article in found_articles[:8]:
+            button_text = f"📰 {article.title[:30]}{'...' if len(article.title) > 30 else ''}"
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=f"view_article_{article.id}")])
+        
+        # אם יש יותר מ-8 כתבות
+        if len(found_articles) > 8:
+            keyboard.append([InlineKeyboardButton(f"📋 הצג עוד {len(found_articles) - 8} תוצאות", callback_data=f"search_more_{text}")])
+        
+        # כפתורי ניווט
+        keyboard.append([
+            InlineKeyboardButton("🔍 חיפוש חדש", callback_data="search"),
+            InlineKeyboardButton("📚 כל הכתבות", callback_data="back_to_saved")
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(response, reply_markup=reply_markup, parse_mode='Markdown')
+        return
+    
+    # בדיקה שזה קישור
+    if not re.match(r'https?://', text):
+        await update.message.reply_text(
+            "לא הבנתי... 🤔\n\n"
+            "אני יכול לעזור לך עם:\n"
+            "• שליחת קישור לכתבה לשמירה\n"
+            "• שימוש בכפתורים למטה\n"
+            "• כתיבת `/help` לעזרה מלאה"
+        )
+        return
+    
+    # זה קישור - נעבד אותו
+    await handle_url(text, update, context)
+
+async def handle_url(url: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """טיפול בקישורים"""
+    user_id = update.effective_user.id
     
     # הודעת טעינה
     loading_message = await update.message.reply_text("🔄 מעבד את הכתבה...")
@@ -536,6 +643,12 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
     
     await loading_message.edit_text(response_text, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    # שליחת הודעה נוספת עם המקלדת הקבועה
+    await update.message.reply_text(
+        "💡 **מה תרצה לעשות עכשיו?**\n\nהשתמש בכפתורים למטה:",
+        reply_markup=get_main_keyboard()
+    )
 
 async def saved_articles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """הצגת כתבות שמורות"""
@@ -543,7 +656,10 @@ async def saved_articles(update: Update, context: ContextTypes.DEFAULT_TYPE):
     articles = bot.get_user_articles(user_id)
     
     if not articles:
-        await update.message.reply_text("אין לך כתבות שמורות עדיין. שלח לי קישור כדי להתחיל! 📚")
+        await update.message.reply_text(
+            "אין לך כתבות שמורות עדיין. שלח לי קישור כדי להתחיל! 📚", 
+            reply_markup=get_main_keyboard()
+        )
         return
     
     # הצגת כתבות עם כפתורים
@@ -1284,7 +1400,10 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     articles = bot.get_user_articles(user_id)
     
     if not articles:
-        await update.message.reply_text("אין לך כתבות שמורות עדיין. שלח לי קישור כדי להתחיל! 📚")
+        await update.message.reply_text(
+            "אין לך כתבות שמורות עדיין. שלח לי קישור כדי להתחיל! 📚", 
+            reply_markup=get_main_keyboard()
+        )
         return
     
     response = f"📋 **רשימת הכתבות שלך** ({len(articles)} כתבות)\n\n"
@@ -1375,8 +1494,8 @@ def main():
     application.add_handler(CommandHandler("backup", backup_command))
     application.add_handler(CommandHandler("tag", tag_command))
     
-    # טיפול בקישורים
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
+    # טיפול בהודעות טקסט - כפתורים, חיפוש וקישורים
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # טיפול בכפתורים
     application.add_handler(CallbackQueryHandler(button_callback))
