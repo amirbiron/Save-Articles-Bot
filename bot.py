@@ -307,12 +307,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📚 שלום וברוך הבא ל"שמור לי לקרוא אחר כך"! 
 
 🔸 שלח לי קישור לכתבה, ואני אסכם ואשמור אותה לך במקום מסודר.
-🔸 השתמש ב-/saved כדי לראות את כל הכתבות שלך
+🔸 השתמש בלחצנים למטה לניווט מהיר
 🔸 השתמש ב-/help לעזרה נוספת
 
 קדימה, שלח לי קישור לכתבה מעניינת! 🚀
 """
-    await update.message.reply_text(welcome_message)
+    
+    # יצירת לחצנים קבועים מתחת לשורת ההקלדה
+    keyboard = [
+        [KeyboardButton("📚 רשימת כתבות"), KeyboardButton("📖 כתבות שלי")],
+        [KeyboardButton("💾 גיבוי"), KeyboardButton("🔍 חיפוש")],
+        [KeyboardButton("🆘 עזרה"), KeyboardButton("📊 סטטיסטיקות")]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, persistent=True)
+    
+    await update.message.reply_text(welcome_message, reply_markup=reply_markup)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """פקודת עזרה"""
