@@ -326,13 +326,19 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📖 איך להשתמש בבוט:
 
 🔸 **שליחת קישור**: פשוט שלח קישור לכתבה ואני אשמור אותה אוטומטית
-🔸 **/saved** - צפייה בכל הכתבות השמורות שלך
+🔸 **/saved** - צפייה בכל הכתבות השמורות שלך לפי קטגוריות
+🔸 **/list** - רשימת כתבות עם מספרים למחיקה מהירה
+🔸 **/delete [מספר]** - מחיקת כתבה לפי מספר
 🔸 **/backup** - גיבוי טקסט נח לקריאה (או `/backup json` לקובץ טכני)
 🔸 **/tag [מספר] [קטגוריה] [תגית]** - עדכון קטגוריה ותגיות
    דוגמה: /tag 3 AI חשוב
 
 📂 **קטגוריות אוטומטיות**:
 • טכנולוגיה • בריאות • כלכלה • פוליטיקה • השראה • כללי
+
+🗑️ **דרכים למחיקת כתבות**:
+• דרך הכפתורים בתצוגת הכתבה
+• דרך פקודת `/delete [מספר]` לאחר `/list`
 """
     await update.message.reply_text(help_text)
 
@@ -500,9 +506,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if len(full_text) > max_length:
                 full_text = full_text[:max_length] + "\n\n💭 *[הטקסט חתוך - הכתבה ארוכה מדי לתצוגה מלאה]*"
             
-            # הכנת כפתור חזרה מעוצב
+            # הכנת כפתורים מעוצבים
             keyboard = [
-                [InlineKeyboardButton("↩️ חזור לסיכום הכתבה", callback_data=f"back_to_article_{article_id}")]
+                [InlineKeyboardButton("↩️ חזור לסיכום", callback_data=f"back_to_article_{article_id}"),
+                 InlineKeyboardButton("🗑️ מחק כתבה", callback_data=f"delete_{article_id}")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
@@ -539,8 +546,46 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     elif data.startswith("delete_"):
         article_id = int(data.split("_")[1])
+        
+        # טעינת פרטי הכתבה לאישור
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('SELECT title FROM articles WHERE id = ? AND user_id = ?', (article_id, user_id))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            title = row[0]
+            # הצגת הודעת אישור
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ כן, מחק", callback_data=f"confirm_delete_{article_id}"),
+                    InlineKeyboardButton("❌ ביטול", callback_data=f"back_to_article_{article_id}")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            confirm_text = f"""
+⚠️ **אישור מחיקה**
+
+האם אתה בטוח שברצונך למחוק את הכתבה:
+
+📰 **{title[:80]}{'...' if len(title) > 80 else ''}**
+
+❗ פעולה זו אינה ניתנת לביטול
+"""
+            
+            await query.edit_message_text(confirm_text, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await query.edit_message_text("❌ לא נמצאה כתבה זו")
+            
+    elif data.startswith("confirm_delete_"):
+        article_id = int(data.split("_")[2])
         bot.delete_article(article_id, user_id)
         await query.edit_message_text("🗑️ הכתבה נמחקה בהצלחה")
+        
+    elif data == "cancel_delete":
+        await query.edit_message_text("❌ המחיקה בוטלה")
         
     elif data.startswith("change_category_"):
         article_id = int(data.split("_")[2])
@@ -704,6 +749,78 @@ async def tag_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ שגיאה: {str(e)}")
 
+async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """פקודת מחיקה מהירה"""
+    user_id = update.effective_user.id
+    
+    if not context.args:
+        await update.message.reply_text("שימוש: /delete [מספר_כתבה]\n\nכדי לראות את מספרי הכתבות, השתמש ב-/list")
+        return
+    
+    try:
+        article_id = int(context.args[0])
+        
+        # בדיקה שהכתבה קיימת
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('SELECT title FROM articles WHERE id = ? AND user_id = ?', (article_id, user_id))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            title = row[0]
+            # הצגת הודעת אישור
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ כן, מחק", callback_data=f"confirm_delete_{article_id}"),
+                    InlineKeyboardButton("❌ ביטול", callback_data="cancel_delete")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            confirm_text = f"""
+⚠️ **אישור מחיקה**
+
+האם אתה בטוח שברצונך למחוק את הכתבה:
+
+📰 **{title[:80]}{'...' if len(title) > 80 else ''}**
+
+❗ פעולה זו אינה ניתנת לביטול
+"""
+            
+            await update.message.reply_text(confirm_text, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await update.message.reply_text("❌ לא נמצאה כתבה עם המספר הזה")
+            
+    except ValueError:
+        await update.message.reply_text("❌ מספר הכתבה חייב להיות מספר")
+    except Exception as e:
+        await update.message.reply_text(f"❌ שגיאה: {str(e)}")
+
+async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """רשימת כתבות עם מספרים למחיקה"""
+    user_id = update.effective_user.id
+    articles = bot.get_user_articles(user_id)
+    
+    if not articles:
+        await update.message.reply_text("אין לך כתבות שמורות עדיין. שלח לי קישור כדי להתחיל! 📚")
+        return
+    
+    response = "📋 **רשימת הכתבות שלך:**\n\n"
+    
+    for i, article in enumerate(articles[:20], 1):  # הצג עד 20 כתבות
+        date_only = article.date_saved.split(' ')[0]
+        response += f"**{article.id}.** {article.title[:50]}{'...' if len(article.title) > 50 else ''}\n"
+        response += f"   📂 {article.category} | 📅 {date_only}\n\n"
+    
+    if len(articles) > 20:
+        response += f"... ועוד {len(articles) - 20} כתבות\n\n"
+    
+    response += "💡 **למחיקה**: `/delete [מספר]`\n"
+    response += "💡 **לצפייה**: `/saved`"
+    
+    await update.message.reply_text(response, parse_mode='Markdown')
+
 async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """פקודת גיבוי"""
     user_id = update.effective_user.id
@@ -754,6 +871,8 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("saved", saved_articles))
+    application.add_handler(CommandHandler("list", list_command))
+    application.add_handler(CommandHandler("delete", delete_command))
     application.add_handler(CommandHandler("backup", backup_command))
     application.add_handler(CommandHandler("tag", tag_command))
     
